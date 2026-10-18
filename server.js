@@ -109,6 +109,13 @@ function auth(req, res, next) {
   }
 }
 
+// Conta que precisa pagar para usar: só pode ver/baixar/apagar o que já tem e pagar
+const isLocked = u => !!u.requirePayment && !activePlan(u);
+function paid(req, res, next) {
+  if (isLocked(req.user)) return res.status(402).json({ error: 'Escolha um plano para continuar usando o Lumi.', locked: true });
+  next();
+}
+
 // Proteção simples contra tentativa de senha em massa
 const attempts = new Map();
 function tooMany(key, max = 20) {
@@ -222,6 +229,8 @@ app.post('/api/register', async (req, res) => {
   if (existing && existing.verified) return res.status(409).json({ error: 'Esse e-mail já tem conta. Entre com ele.' });
   if (existing) db.users = db.users.filter(u => u !== existing); // cadastro anterior nunca confirmado
   const user = { id: id(), name, email, hash: await bcrypt.hash(password, 12), tv: 0, verified: false, devices: [], createdAt: Date.now() };
+  // opção do admin: toda conta nova precisa pagar um plano para usar
+  if ((db.settings || {}).paywallNew && !QUOTA_OVERRIDES.has(email) && !ADMIN_EMAILS.includes(email)) user.requirePayment = true;
   db.users.push(user); saveDb();
   finishLogin(req, res, user, 'verify');
 });
@@ -420,7 +429,7 @@ app.post('/api/mp/webhook', async (req, res) => {
 });
 
 app.get('/api/me', auth, (req, res) => {
-  res.json({ name: req.user.name, email: req.user.email, used: usedBytes(req.user.id), quota: quotaFor(req.user), lifetime: QUOTA_OVERRIDES.has(req.user.email) || !!req.user.lifetime, admin: isAdmin(req.user), needRecovery: !req.user.recHash });
+  res.json({ name: req.user.name, email: req.user.email, used: usedBytes(req.user.id), quota: quotaFor(req.user), lifetime: QUOTA_OVERRIDES.has(req.user.email) || !!req.user.lifetime, admin: isAdmin(req.user), locked: isLocked(req.user), needRecovery: !req.user.recHash });
 });
 
 // ---------- Arquivos ----------
@@ -445,7 +454,7 @@ app.get('/api/files', auth, (req, res) => {
   res.json(list.map(publicFile));
 });
 
-app.post('/api/upload', auth, upload.array('files', 50), (req, res) => {
+app.post('/api/upload', auth, paid, upload.array('files', 50), (req, res) => {
   const incoming = req.files || [];
   const total = incoming.reduce((s, f) => s + f.size, 0);
   if (usedBytes(req.user.id) + total > quotaFor(req.user)) {
@@ -536,7 +545,7 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
-app.post('/api/upload/start', auth, async (req, res) => {
+app.post('/api/upload/start', auth, paid, async (req, res) => {
   if (!S3_ON) return res.status(400).json({ error: 'Envio direto indisponível.' });
   const list = Array.isArray(req.body.files) ? req.body.files.slice(0, 50) : [];
   if (!list.length) return res.status(400).json({ error: 'Nenhum arquivo escolhido.' });
@@ -582,7 +591,7 @@ app.post('/api/upload/start', auth, async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ error: 'Não consegui preparar o envio. Tente de novo.' }); }
 });
 
-app.post('/api/upload/finish', auth, async (req, res) => {
+app.post('/api/upload/finish', auth, paid, async (req, res) => {
   const items = Array.isArray(req.body.items) ? req.body.items.slice(0, 50)
     : (Array.isArray(req.body.ids) ? req.body.ids.slice(0, 50).map(id => ({ id })) : []);
   const saved = [];
@@ -657,7 +666,7 @@ app.get('/api/files/:id/download', auth, async (req, res) => {
   res.download(path.join(FILES_DIR, f.id), f.name);
 });
 
-app.patch('/api/files/:id', auth, (req, res) => {
+app.patch('/api/files/:id', auth, paid, (req, res) => {
   const f = ownFile(req, res); if (!f) return;
   if (typeof req.body.fav === 'boolean') f.fav = req.body.fav;
   if (typeof req.body.name === 'string' && req.body.name.trim()) f.name = req.body.name.trim().slice(0, 200);
@@ -698,7 +707,7 @@ app.delete('/api/files/:id', auth, (req, res) => {
   res.json(publicFile(f));
 });
 
-app.post('/api/files/:id/restore', auth, (req, res) => {
+app.post('/api/files/:id/restore', auth, paid, (req, res) => {
   const f = ownFile(req, res); if (!f) return;
   delete f.deletedAt; saveDb();
   res.json(publicFile(f));
@@ -750,7 +759,7 @@ app.get('/api/admin/summary', admin, (req, res) => {
       quota: quotaFor(u), customGB: u.customGB || null,
       lifetime: !!u.lifetime || QUOTA_OVERRIDES.has(u.email), lifetimeFromEnv: QUOTA_OVERRIDES.has(u.email),
       plan: plan ? { name: plan.name, until: u.planUntil } : null,
-      blocked: !!u.blocked, admin: isAdmin(u),
+      blocked: !!u.blocked, admin: isAdmin(u), requirePayment: !!u.requirePayment, locked: isLocked(u),
     };
   }).sort((a, b) => b.used - a.used);
   res.json({
@@ -761,7 +770,7 @@ app.get('/api/admin/summary', admin, (req, res) => {
       activePlans: db.users.filter(u => activePlan(u)).length,
     },
     users, payments: payments.slice(0, 30).map(p => ({ ...p, email: (db.users.find(u => u.id === p.userId) || {}).email || '—', plan: (PLANS[p.planId] || {}).name || p.planId })),
-    defaultGB: Math.round(QUOTA_BYTES / GB), plans: PLANS,
+    defaultGB: Math.round(QUOTA_BYTES / GB), plans: PLANS, paywallNew: !!(db.settings || {}).paywallNew,
   });
 });
 
@@ -776,6 +785,10 @@ app.post('/api/admin/user/:id', admin, (req, res) => {
     u.plan = b.planId; u.planUntil = start + Math.min(3650, Number(b.addDays)) * 864e5;
   }
   if (b.clearPlan) { u.plan = undefined; u.planUntil = 0; }
+  if ('requirePayment' in b && !isAdmin(u)) {
+    u.requirePayment = !!b.requirePayment;
+    if (u.requirePayment) { u.tv = (u.tv || 0) + 1; u.devices = []; } // desconecta na hora
+  }
   if ('blocked' in b && !isAdmin(u)) { u.blocked = !!b.blocked; if (u.blocked) u.tv = (u.tv || 0) + 1; }
   saveDb();
   console.log('[admin]', req.user.email, 'alterou', u.email, JSON.stringify(b));
@@ -786,6 +799,7 @@ app.post('/api/admin/settings', admin, (req, res) => {
   db.settings = db.settings || {};
   const d = Number(req.body.railwayDueDay);
   if (d >= 1 && d <= 28) db.settings.railwayDueDay = d;
+  if ('paywallNew' in req.body) db.settings.paywallNew = !!req.body.paywallNew;
   saveDb(); res.json({ ok: true, railway: railwayDue() });
 });
 

@@ -99,6 +99,11 @@ h2{font-family:var(--display);font-size:19px;margin:22px 0 10px}
       </div>
     </div>
 
+    <div class="card">
+      <label class="switch">Contas novas precisam pagar um plano para entrar <input type="checkbox" id="pwNew"></label>
+      <p style="margin:8px 0 0;font-size:14px;color:var(--soft);line-height:1.45">Ligado: quem se cadastrar a partir de agora vê a tela de pagamento logo depois de criar a conta. Clientes antigos e contas vitalícias não são afetados.</p>
+    </div>
+
     <div class="tiles">
       <div class="tile"><span class="label">Clientes</span><b id="tUsers">0</b></div>
       <div class="tile"><span class="label">Arquivos</span><b id="tFiles">0</b></div>
@@ -148,6 +153,11 @@ h2{font-family:var(--display);font-size:19px;margin:22px 0 10px}
       </div>
     </div>
 
+    <div class="sec" id="sPaySec">
+      <label class="switch">Exigir pagamento para entrar <input type="checkbox" id="sReq"></label>
+      <p id="sReqNote" style="margin-top:8px"></p>
+    </div>
+
     <div class="sec">
       <span class="label">Acesso</span>
       <p id="sBlockTxt"></p>
@@ -186,6 +196,7 @@ async function load() {
   pill.textContent = r.daysLeft <= 0 ? 'Vence hoje' : `Faltam ${r.daysLeft} dia${r.daysLeft > 1 ? 's' : ''}`;
   pill.className = 'pill ' + (r.daysLeft <= 3 ? 'bad' : r.daysLeft <= 7 ? 'warn' : 'ok');
   $('#dueDay').value = r.day;
+  $('#pwNew').checked = data.paywallNew;
   const t = data.totals;
   $('#tUsers').textContent = t.users; $('#tFiles').textContent = t.files;
   $('#tStored').textContent = fmt(t.stored); $('#tRevenue').textContent = brl(t.revenueMonth);
@@ -211,6 +222,7 @@ function renderUsers() {
         ${u.plan ? `<span class="tag paid">${esc(u.plan.name)} até ${date(u.plan.until)}</span>` : ''}
         ${u.customGB ? `<span class="tag">${u.customGB} GB definido</span>` : ''}
         ${u.blocked ? '<span class="tag blk">Suspensa</span>' : ''}
+        ${u.requirePayment ? `<span class="tag ${u.locked ? 'blk' : 'paid'}">${u.locked ? 'Aguardando pagamento' : 'Cobrança paga'}</span>` : ''}
         <span class="tag">${u.files} arquivo${u.files === 1 ? '' : 's'}</span>
       </span>
     </button>`).join('') || '<div class="empty">Nenhum cliente encontrado.</div>';
@@ -236,6 +248,12 @@ function openUser(u) {
   $('#sPlanTxt').textContent = u.plan ? `${u.plan.name} ativo até ${date(u.plan.until)}.` : 'Nenhum plano pago ativo.';
   $('#sCancel').classList.toggle('hidden', !u.plan);
   $('#sBlock').classList.toggle('hidden', u.admin);
+  $('#sPaySec').classList.toggle('hidden', u.admin);
+  $('#sReq').checked = u.requirePayment;
+  $('#sReqNote').textContent = !u.requirePayment
+    ? 'Desconecta o cliente na hora. Para entrar de novo, ele vê a tela de pagamento e só usa o Lumi depois de pagar um plano. Ele ainda consegue baixar o que já tinha guardado.'
+    : u.locked ? 'Ativo: o cliente está esperando pagar para entrar.'
+    : 'Ativo: o cliente já pagou e está usando normalmente. Quando o plano vencer, a tela de pagamento volta.';
   $('#sBlockTxt').textContent = u.admin ? 'A conta do administrador não pode ser suspensa.'
     : u.blocked ? 'Conta suspensa: o cliente não consegue entrar. Os arquivos continuam guardados.'
     : 'Suspender desconecta o cliente e impede o acesso. Nenhum arquivo é apagado.';
@@ -256,6 +274,10 @@ $('#sSaveGB').onclick = () => {
   change({ customGB: g }, `Espaço definido: ${g} GB.`);
 };
 $('#sResetGB').onclick = () => change({ customGB: null }, 'Voltou ao espaço padrão.');
+$('#sReq').onchange = e => {
+  if (e.target.checked && !confirm(`Desconectar ${cur.name} e exigir pagamento para entrar?`)) { e.target.checked = false; return; }
+  change({ requirePayment: e.target.checked }, e.target.checked ? 'Cliente desconectado. Para entrar, vai precisar pagar.' : 'Cobrança para entrar desligada.');
+};
 $('#sLife').onchange = e => change({ lifetime: e.target.checked }, e.target.checked ? 'Agora é vitalício.' : 'Vitalício removido.');
 $('#sGive').onclick = () => {
   const d = Number($('#sDays').value);
@@ -266,6 +288,10 @@ $('#sCancel').onclick = () => { if (confirm('Cancelar o plano pago desta conta a
 $('#sBlock').onclick = () => {
   if (!cur.blocked && !confirm(`Suspender a conta de ${cur.name}? Ela não vai conseguir entrar até você reativar.`)) return;
   change({ blocked: !cur.blocked }, cur.blocked ? 'Conta reativada.' : 'Conta suspensa.');
+};
+$('#pwNew').onchange = async e => {
+  try { await api('/api/admin/settings', { method: 'POST', body: JSON.stringify({ paywallNew: e.target.checked }) }); toast(e.target.checked ? 'Contas novas vão precisar pagar para entrar.' : 'Contas novas entram de graça com o espaço padrão.'); }
+  catch (err) { toast(err.message); e.target.checked = !e.target.checked; }
 };
 $('#saveDay').onclick = async () => {
   try { await api('/api/admin/settings', { method: 'POST', body: JSON.stringify({ railwayDueDay: Number($('#dueDay').value) }) }); toast('Dia de cobrança salvo.'); load(); }

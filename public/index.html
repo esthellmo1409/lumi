@@ -90,6 +90,14 @@ input{font:inherit}
 .fab{transition:opacity .2s,transform .2s}
 .fab.away{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(20px)}
 .lifetime{display:inline-block;margin-top:12px;background:linear-gradient(90deg,var(--accent2),var(--accent));color:#24140a;font-weight:800;font-size:13px;padding:6px 12px;border-radius:99px}
+.payview{max-width:520px;margin:0 auto;padding:28px max(20px,env(safe-area-inset-right)) 60px max(20px,env(safe-area-inset-left))}
+.payview h1{font-family:"Bricolage Grotesque",Inter,system-ui,-apple-system,sans-serif;font-size:30px;line-height:1.1;margin:18px 0 10px}
+.payview h1 em{font-style:normal;color:var(--accent)}
+.payview .lead{color:var(--soft);line-height:1.5;margin:0 0 18px}
+.myfiles{margin-top:22px;border-top:1px solid var(--line);padding-top:16px}
+.myfiles a{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);color:var(--ink);text-decoration:none;font-size:14px}
+.myfiles a span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.myfiles a small{color:var(--accent2);white-space:nowrap}
 .err{color:var(--danger);font-size:14px;min-height:20px;margin:4px 0 10px}
 
 /* ---------- Painel ---------- */
@@ -215,6 +223,22 @@ input{font:inherit}
     <button class="btn" id="forgotBtn">Enviar código</button>
     <button type="button" class="linkbtn" id="forgotBack" style="color:var(--soft)">Voltar para o login</button>
   </form>
+</section>
+
+<!-- COBRANÇA PARA ENTRAR -->
+<section class="payview hidden" id="payView">
+  <div class="logo">
+    <svg viewBox="0 0 48 48" width="34" height="34"><path d="M14 36a9 9 0 0 1-1.2-17.9A12 12 0 0 1 36 16.5 8 8 0 0 1 35 36Z" fill="url(#g)"/><path d="M24 31V21m0 0-4.5 4.5M24 21l4.5 4.5" stroke="#0f1630" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="brand" style="font-size:26px">Lumi</span>
+  </div>
+  <h1>Escolha seu plano para <em>continuar.</em></h1>
+  <p class="lead" id="payLead">Para usar o Lumi, escolha um plano abaixo. Paga com Pix ou cartão e o acesso libera assim que o pagamento for aprovado.</p>
+  <div class="plans" id="payPlans"></div>
+  <div class="err" id="payErr"></div>
+  <button class="btn" id="payBtn">Continuar para o pagamento</button>
+  <button type="button" class="linkbtn" id="payMine">Baixar meus arquivos</button>
+  <div class="myfiles hidden" id="payFiles"></div>
+  <button type="button" class="linkbtn" id="payOut" style="color:var(--soft)">Sair</button>
 </section>
 
 <!-- PAINEL -->
@@ -493,8 +517,44 @@ $('#recNewForm').onsubmit = async e => {
   $('#recNewBtn').disabled = false;
 };
 
+let payPoll = null;
+async function showPaywall() {
+  $('#authView').classList.add('hidden'); $('#appView').classList.add('hidden'); $('#payView').classList.remove('hidden');
+  $('#payLead').textContent = `Oi, ${me.name.trim().split(/\s+/)[0]}. Para continuar usando o Lumi, escolha um plano abaixo. Paga com Pix ou cartão e o acesso libera assim que o pagamento for aprovado.`;
+  try {
+    const d = await api('/api/plans');
+    $('#payPlans').innerHTML = d.plans.map(p => `
+      <button type="button" class="plan${p.id === planChoice ? ' on' : ''}" data-id="${p.id}">
+        <span class="gb">${p.name}</span>
+        <span class="info">${p.id === 'mais100' ? '<span class="tag">Mais escolhido</span>' : ''}${brl(p.price / p.gb)} por GB</span>
+        <span class="price">${brl(p.price)}<small>por mês</small></span>
+      </button>`).join('');
+    document.querySelectorAll('#payPlans .plan').forEach(b => b.onclick = () => {
+      planChoice = b.dataset.id;
+      document.querySelectorAll('#payPlans .plan').forEach(x => x.classList.toggle('on', x === b));
+    });
+  } catch (err) { $('#payErr').textContent = err.message; }
+  const mine = await api('/api/files').catch(() => []);
+  $('#payMine').classList.toggle('hidden', !mine.length);
+  $('#payFiles').innerHTML = mine.map(f => `<a href="/api/files/${f.id}/download"><span>${esc(f.name)}</span><small>Baixar · ${fmt(f.size)}</small></a>`).join('');
+  // libera sozinho quando o pagamento é aprovado
+  clearInterval(payPoll);
+  payPoll = setInterval(async () => {
+    try { const m = await api('/api/me'); if (!m.locked) { clearInterval(payPoll); $('#payView').classList.add('hidden'); toast('Pagamento aprovado! Bem-vindo(a) de volta.'); hideToast(4000); boot(); } } catch {}
+  }, 6000);
+}
+$('#payBtn').onclick = async () => {
+  $('#payBtn').disabled = true; $('#payErr').textContent = '';
+  try { const { url } = await api('/api/checkout', { method: 'POST', body: JSON.stringify({ plan: planChoice }) }); location.href = url; }
+  catch (err) { $('#payErr').textContent = err.message; $('#payBtn').disabled = false; }
+};
+$('#payMine').onclick = () => $('#payFiles').classList.toggle('hidden');
+$('#payOut').onclick = async () => { clearInterval(payPoll); await api('/api/logout', { method: 'POST' }); location.reload(); };
+
 async function boot(skipRecovery) {
   try { me = await api('/api/me'); } catch { $('#authView').classList.remove('hidden'); $('#appView').classList.add('hidden'); return; }
+  if (me.locked) return showPaywall();
+  $('#payView').classList.add('hidden');
   $('#authView').classList.add('hidden'); $('#appView').classList.remove('hidden');
   $('#avatarBtn').textContent = me.name[0].toUpperCase();
   $('#helloName').textContent = me.name.trim().split(/\s+/)[0];
