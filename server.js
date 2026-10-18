@@ -428,8 +428,16 @@ app.post('/api/mp/webhook', async (req, res) => {
   } catch (e) { console.error('[pagamentos] erro no aviso', e.message); }
 });
 
+// tema e cor escolhidos pela pessoa
+app.post('/api/prefs', auth, (req, res) => {
+  const mode = ['auto', 'light', 'dark'].includes(req.body.mode) ? req.body.mode : 'auto';
+  const accent = ['ambar', 'azul', 'verde', 'violeta', 'rosa', 'grafite'].includes(req.body.accent) ? req.body.accent : 'ambar';
+  req.user.prefs = { mode, accent }; saveDb();
+  res.json({ ok: true });
+});
+
 app.get('/api/me', auth, (req, res) => {
-  res.json({ name: req.user.name, email: req.user.email, used: usedBytes(req.user.id), quota: quotaFor(req.user), lifetime: QUOTA_OVERRIDES.has(req.user.email) || !!req.user.lifetime, admin: isAdmin(req.user), locked: isLocked(req.user), needRecovery: !req.user.recHash });
+  res.json({ name: req.user.name, email: req.user.email, used: usedBytes(req.user.id), quota: quotaFor(req.user), lifetime: QUOTA_OVERRIDES.has(req.user.email) || !!req.user.lifetime, admin: isAdmin(req.user), locked: isLocked(req.user), prefs: req.user.prefs || null, needRecovery: !req.user.recHash });
 });
 
 // ---------- Arquivos ----------
