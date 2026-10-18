@@ -4,7 +4,8 @@ Painel para guardar fotos, vídeos, áudios e documentos na nuvem e liberar espa
 Cada pessoa cria sua conta, envia os arquivos direto da galeria e depois pode apagar do celular.
 
 ## O que já vem pronto
-- Cadastro e login (senha criptografada, sessão de 60 dias)
+- Cadastro e login (senha criptografada, sessão de 30 dias)
+- Código por e-mail no cadastro, ao entrar de um aparelho novo e para recuperar a senha
 - Envio de vários arquivos de uma vez com barra de progresso (vídeos grandes também)
 - Grade de fotos e vídeos, filtros (Fotos, Vídeos, Documentos, Áudios, Favoritos) e busca
 - Visualizar, salvar de volta no iPhone, compartilhar, favoritar e apagar
@@ -26,6 +27,8 @@ Cada pessoa cria sua conta, envia os arquivos direto da galeria e depois pode ap
    - `QUOTA_MB` = `5120` (espaço por pessoa em MB; opcional)
    - `MAX_FILE_MB` = `2048` (tamanho máximo de cada arquivo; opcional)
    - `ALLOW_SIGNUP` = `false` se quiser fechar novos cadastros (opcional)
+   - `RESEND_API_KEY` e `EMAIL_FROM` (ex: `Lumi <codigo@seudominio.com.br>`) para ativar os códigos por e-mail.
+     Sem essas duas, o login funciona sem código.
 4. Em **Settings > Networking**, clique em **Generate Domain**. Esse é o link do seu painel.
 
 ## Custos a ter em mente

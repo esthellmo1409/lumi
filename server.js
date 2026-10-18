@@ -108,6 +108,89 @@ function weakPassword(p) {
   return null;
 }
 
+// ---------- Código por e-mail ----------
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const EMAIL_FROM = process.env.EMAIL_FROM || '';
+const EMAIL_ON = !!(RESEND_API_KEY && EMAIL_FROM);
+console.log(EMAIL_ON ? '[e-mail] Códigos por e-mail ATIVADOS' : '[e-mail] Códigos por e-mail desativados (defina RESEND_API_KEY e EMAIL_FROM)');
+
+// contas criadas antes do sistema de código já contam como confirmadas
+for (const u of db.users) { if (u.verified === undefined) u.verified = true; if (!u.devices) u.devices = []; }
+
+const challenges = new Map(); // ticket -> { userId, purpose, codeHash, exp, tries, sentAt }
+const sha = s => crypto.createHash('sha256').update(s).digest('hex');
+setInterval(() => { const now = Date.now(); for (const [k, c] of challenges) if (c.exp < now) challenges.delete(k); }, 60 * 1000);
+
+const SUBJECTS = {
+  verify: 'Confirme seu e-mail no Lumi',
+  login: 'Código para entrar no Lumi',
+  reset: 'Código para criar uma nova senha no Lumi',
+};
+const LINES = {
+  verify: 'Use o código abaixo para confirmar seu e-mail e ativar sua conta.',
+  login: 'Alguém está entrando na sua conta de um aparelho novo. Se foi você, use o código abaixo.',
+  reset: 'Use o código abaixo para criar uma nova senha.',
+};
+
+async function sendCode(user, purpose, code) {
+  const html = `<div style="font-family:Arial,sans-serif;max-width:440px;margin:0 auto;padding:28px;background:#0f1630;color:#f3f1ea;border-radius:16px">
+  <div style="font-size:24px;font-weight:800;margin-bottom:18px">Lumi</div>
+  <p style="font-size:16px;line-height:1.5;margin:0 0 20px">Oi, ${user.name.replace(/[<>&]/g, '')}. ${LINES[purpose]}</p>
+  <div style="font-size:36px;letter-spacing:10px;font-weight:800;background:#1b2550;border-radius:12px;padding:18px;text-align:center;color:#ffb36b">${code}</div>
+  <p style="font-size:13px;color:#a9b0d3;line-height:1.5;margin:20px 0 0">O código vale por 10 minutos. Se você não pediu isso, ignore este e-mail e considere trocar sua senha.</p>
+</div>`;
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: EMAIL_FROM, to: [user.email], subject: SUBJECTS[purpose], html, text: `${LINES[purpose]} Código: ${code}. Vale por 10 minutos.` }),
+  });
+  if (!r.ok) { console.error('[e-mail] falha ao enviar', r.status, await r.text().catch(() => '')); throw new Error('mail'); }
+}
+
+async function startChallenge(user, purpose) {
+  const ticket = crypto.randomBytes(18).toString('hex');
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  challenges.set(ticket, { userId: user ? user.id : null, purpose, codeHash: sha(ticket + code), exp: Date.now() + 10 * 60 * 1000, tries: 0, sentAt: Date.now() });
+  if (user) await sendCode(user, purpose, code);
+  return ticket;
+}
+function checkChallenge(ticket, code, purpose) {
+  const c = challenges.get(String(ticket || ''));
+  if (!c || c.purpose !== purpose || c.exp < Date.now()) return { error: 'O código expirou. Peça um novo.' };
+  if (++c.tries > 5) { challenges.delete(ticket); return { error: 'Muitas tentativas erradas. Peça um novo código.' }; }
+  const ok = c.userId && crypto.timingSafeEqual(Buffer.from(c.codeHash), Buffer.from(sha(ticket + String(code || '').replace(/\D/g, ''))));
+  if (!ok) return { error: `Código incorreto. Restam ${5 - c.tries} tentativa(s).` };
+  challenges.delete(ticket);
+  return { user: db.users.find(u => u.id === c.userId) };
+}
+
+// aparelho de confiança: depois de confirmar o código uma vez, ele entra direto
+function trustDevice(req, res, user) {
+  let dev = req.cookies.lumi_dev;
+  if (!dev || !/^[a-f0-9]{32}$/.test(dev)) dev = crypto.randomBytes(16).toString('hex');
+  user.devices = (user.devices || []).filter(d => d.h !== sha(dev));
+  user.devices.unshift({ h: sha(dev), ua: String(req.get('user-agent') || '').slice(0, 160), at: Date.now() });
+  user.devices = user.devices.slice(0, 15);
+  res.cookie('lumi_dev', dev, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: 365 * 24 * 3600 * 1000 });
+}
+const knownDevice = (req, user) => !!req.cookies.lumi_dev && (user.devices || []).some(d => d.h === sha(req.cookies.lumi_dev));
+
+async function finishLogin(req, res, user, purpose) {
+  if (!EMAIL_ON || (purpose !== 'verify' && user.verified && knownDevice(req, user))) {
+    if (!EMAIL_ON) user.verified = true;
+    trustDevice(req, res, user); saveDb(); setSession(res, user);
+    return res.json({ ok: true });
+  }
+  try {
+    const ticket = await startChallenge(user, user.verified ? 'login' : 'verify');
+    res.json({ needCode: true, ticket, email: user.email, purpose: user.verified ? 'login' : 'verify' });
+  } catch {
+    res.status(502).json({ error: 'Não conseguimos enviar o código agora. Tente de novo em instantes.' });
+  }
+}
+
+app.get('/api/config', (req, res) => res.json({ email: EMAIL_ON }));
+
 app.post('/api/register', async (req, res) => {
   if (tooMany('reg:' + req.ip)) return res.status(429).json({ error: 'Muitas contas criadas daqui. Tente mais tarde.' });
   if (!ALLOW_SIGNUP) return res.status(403).json({ error: 'Cadastros estão fechados.' });
@@ -117,11 +200,12 @@ app.post('/api/register', async (req, res) => {
   if (!name || !/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: 'Preencha nome e um e-mail válido.' });
   const weak = weakPassword(password);
   if (weak) return res.status(400).json({ error: weak });
-  if (db.users.some(u => u.email === email)) return res.status(409).json({ error: 'Esse e-mail já tem conta. Entre com ele.' });
-  const user = { id: id(), name, email, hash: await bcrypt.hash(password, 12), tv: 0, createdAt: Date.now() };
+  const existing = db.users.find(u => u.email === email);
+  if (existing && existing.verified) return res.status(409).json({ error: 'Esse e-mail já tem conta. Entre com ele.' });
+  if (existing) db.users = db.users.filter(u => u !== existing); // cadastro anterior nunca confirmado
+  const user = { id: id(), name, email, hash: await bcrypt.hash(password, 12), tv: 0, verified: false, devices: [], createdAt: Date.now() };
   db.users.push(user); saveDb();
-  setSession(res, user);
-  res.json({ ok: true });
+  finishLogin(req, res, user, 'verify');
 });
 
 app.post('/api/login', async (req, res) => {
@@ -131,7 +215,52 @@ app.post('/api/login', async (req, res) => {
   if (!user || !(await bcrypt.compare(String(req.body.password || ''), user.hash))) {
     return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
   }
-  setSession(res, user);
+  finishLogin(req, res, user, 'login');
+});
+
+app.post('/api/code', (req, res) => {
+  if (tooMany('code:' + req.ip, 30)) return res.status(429).json({ error: 'Muitas tentativas. Espere alguns minutos.' });
+  const c = challenges.get(String(req.body.ticket || ''));
+  if (!c || c.purpose === 'reset') return res.status(400).json({ error: 'O código expirou. Peça um novo.' });
+  const r = checkChallenge(req.body.ticket, req.body.code, c.purpose);
+  if (r.error || !r.user) return res.status(400).json({ error: r.error || 'Código inválido.' });
+  r.user.verified = true;
+  trustDevice(req, res, r.user); saveDb(); setSession(res, r.user);
+  res.json({ ok: true });
+});
+
+app.post('/api/resend', async (req, res) => {
+  const c = challenges.get(String(req.body.ticket || ''));
+  if (!c) return res.status(400).json({ error: 'O código expirou. Volte e tente de novo.' });
+  if (Date.now() - c.sentAt < 45 * 1000) return res.status(429).json({ error: 'Espere alguns segundos antes de pedir outro código.' });
+  const user = db.users.find(u => u.id === c.userId);
+  challenges.delete(req.body.ticket);
+  try { const ticket = await startChallenge(user, c.purpose); res.json({ ticket }); }
+  catch { res.status(502).json({ error: 'Não conseguimos enviar o código agora. Tente de novo em instantes.' }); }
+});
+
+// Esqueci minha senha
+app.post('/api/forgot', async (req, res) => {
+  if (!EMAIL_ON) return res.status(503).json({ error: 'A recuperação por e-mail ainda não foi ativada.' });
+  if (tooMany('forgot:' + req.ip, 8)) return res.status(429).json({ error: 'Muitos pedidos. Espere alguns minutos.' });
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const user = db.users.find(u => u.email === email);
+  try {
+    // mesma resposta exista ou não a conta, para ninguém descobrir quais e-mails estão cadastrados
+    const ticket = await startChallenge(user || null, 'reset');
+    res.json({ ticket });
+  } catch { res.status(502).json({ error: 'Não conseguimos enviar o código agora. Tente de novo em instantes.' }); }
+});
+
+app.post('/api/reset', async (req, res) => {
+  if (tooMany('code:' + req.ip, 30)) return res.status(429).json({ error: 'Muitas tentativas. Espere alguns minutos.' });
+  const weak = weakPassword(String(req.body.password || ''));
+  if (weak) return res.status(400).json({ error: weak });
+  const r = checkChallenge(req.body.ticket, req.body.code, 'reset');
+  if (r.error || !r.user) return res.status(400).json({ error: r.error || 'Código incorreto.' });
+  r.user.hash = await bcrypt.hash(String(req.body.password), 12);
+  r.user.tv = (r.user.tv || 0) + 1; r.user.verified = true; r.user.devices = [];
+  trustDevice(req, res, r.user); saveDb(); setSession(res, r.user);
   res.json({ ok: true });
 });
 
@@ -145,12 +274,13 @@ app.post('/api/password', auth, async (req, res) => {
   if (weak) return res.status(400).json({ error: weak });
   req.user.hash = await bcrypt.hash(next, 12);
   req.user.tv = (req.user.tv || 0) + 1; // desconecta os outros aparelhos
+  req.user.devices = []; trustDevice(req, res, req.user); // só este aparelho continua de confiança
   saveDb(); setSession(res, req.user);
   res.json({ ok: true });
 });
 
 app.post('/api/logout-all', auth, (req, res) => {
-  req.user.tv = (req.user.tv || 0) + 1; saveDb();
+  req.user.tv = (req.user.tv || 0) + 1; req.user.devices = []; saveDb();
   res.clearCookie('lumi'); res.json({ ok: true });
 });
 

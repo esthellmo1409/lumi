@@ -53,6 +53,9 @@ input{font:inherit}
 .addbtn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:15px;border-radius:14px;background:var(--accent);color:#24140a;font-weight:700;font-size:16px;margin-bottom:14px}
 .addbtn svg{width:20px;height:20px}
 .empty .addbtn{width:auto;display:inline-flex;margin:20px 0 0;padding:14px 22px}
+.linkbtn{display:block;margin:14px auto 0;color:var(--accent2);font-weight:600;font-size:15px}
+.codein{font-family:"Bricolage Grotesque",Inter,sans-serif;font-size:30px!important;letter-spacing:12px;text-align:center;font-weight:700}
+.muted{color:var(--soft);font-size:14px;text-align:center;margin-top:14px}
 .err{color:var(--danger);font-size:14px;min-height:20px;margin:4px 0 10px}
 
 /* ---------- Painel ---------- */
@@ -139,6 +142,28 @@ input{font:inherit}
     <button class="btn" id="authBtn">Criar minha conta grátis</button>
   </form>
   <div class="switch" id="authSwitch">Já tem conta? <button type="button">Entrar</button></div>
+  <button type="button" class="linkbtn hidden" id="forgotLink">Esqueci minha senha</button>
+
+  <form id="codeForm" class="hidden" autocomplete="off">
+    <label class="field"><input id="codeIn" class="codein" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required></label>
+    <div class="err" id="codeErr"></div>
+    <button class="btn" id="codeBtn">Confirmar código</button>
+    <button type="button" class="linkbtn" id="resendBtn">Reenviar código</button>
+    <button type="button" class="linkbtn" id="codeBack" style="color:var(--soft)">Voltar</button>
+  </form>
+
+  <form id="forgotForm" class="hidden">
+    <div id="forgotStep1">
+      <label class="field"><input id="fEmail" type="email" placeholder="E-mail da sua conta" autocomplete="email" required></label>
+    </div>
+    <div id="forgotStep2" class="hidden">
+      <label class="field"><input id="fCode" class="codein" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"></label>
+      <label class="field pw"><input id="fPass" type="password" placeholder="Nova senha (8+ caracteres, letras e números)" autocomplete="new-password"></label>
+    </div>
+    <div class="err" id="forgotErr"></div>
+    <button class="btn" id="forgotBtn">Enviar código</button>
+    <button type="button" class="linkbtn" id="forgotBack" style="color:var(--soft)">Voltar para o login</button>
+  </form>
 </section>
 
 <!-- PAINEL -->
@@ -244,9 +269,12 @@ for (let i = 0; i < 40; i++) { const s = document.createElement('span'); s.style
 let files = [], filter = 'all', query = '', selecting = false, selected = new Set(), me = null, current = null;
 
 // ---------- Entrada ----------
-let mode = 'register';
+let mode = 'register', emailOn = false, ticket = null;
+const screens = ['#authForm', '#authSwitch', '#forgotLink', '#codeForm', '#forgotForm'];
 function setMode(m) {
   mode = m;
+  screens.forEach(sel => $(sel).classList.toggle('hidden', sel === '#codeForm' || sel === '#forgotForm' || (sel === '#forgotLink' && !(m === 'login' && emailOn))));
+  $('#authLead').textContent = 'Guarde fotos, vídeos e documentos na sua nuvem e libere espaço no celular sem perder nada.';
   $('#nameField').classList.toggle('hidden', m === 'login');
   $('#authBtn').textContent = m === 'login' ? 'Entrar' : 'Criar minha conta grátis';
   $('#authTitle').innerHTML = m === 'login' ? 'Que bom te ver<br>de <em>novo.</em>' : 'Seu iPhone<br>leve de <em>novo.</em>';
@@ -255,14 +283,70 @@ function setMode(m) {
   $('#authErr').textContent = '';
 }
 $('#authSwitch button').onclick = () => setMode('login');
+fetch('/api/config').then(r => r.json()).then(c => { emailOn = c.email; setMode(mode); }).catch(() => {});
+function screen(show, title, lead) {
+  screens.forEach(sel => $(sel).classList.toggle('hidden', !show.includes(sel)));
+  if (title) $('#authTitle').innerHTML = title;
+  if (lead) $('#authLead').textContent = lead;
+}
+function showCode(data) {
+  ticket = data.ticket;
+  $('#codeErr').textContent = ''; $('#codeIn').value = '';
+  screen(['#codeForm'], data.purpose === 'verify' ? 'Confirme seu <em>e-mail.</em>' : 'Aparelho <em>novo.</em>',
+    `Enviamos um código de 6 números para ${data.email}. Ele vale por 10 minutos. Confira também a caixa de spam.`);
+  setTimeout(() => $('#codeIn').focus(), 50);
+}
 $('#authForm').onsubmit = async e => {
   e.preventDefault();
   const body = Object.fromEntries(new FormData(e.target));
   $('#authBtn').disabled = true;
-  try { await api('/api/' + mode, { method: 'POST', body: JSON.stringify(body) }); await boot(); }
+  try {
+    const r = await api('/api/' + mode, { method: 'POST', body: JSON.stringify(body) });
+    if (r.needCode) showCode(r); else await boot();
+  }
   catch (err) { $('#authErr').textContent = err.message; }
   $('#authBtn').disabled = false;
 };
+$('#codeForm').onsubmit = async e => {
+  e.preventDefault(); $('#codeBtn').disabled = true;
+  try { await api('/api/code', { method: 'POST', body: JSON.stringify({ ticket, code: $('#codeIn').value }) }); await boot(); }
+  catch (err) { $('#codeErr').textContent = err.message; }
+  $('#codeBtn').disabled = false;
+};
+$('#codeIn').oninput = e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6); if (e.target.value.length === 6) $('#codeForm').requestSubmit(); };
+$('#resendBtn').onclick = async () => {
+  try { const r = await api('/api/resend', { method: 'POST', body: JSON.stringify({ ticket }) }); ticket = r.ticket; $('#codeErr').textContent = ''; toast('Enviamos um novo código.'); hideToast(); }
+  catch (err) { $('#codeErr').textContent = err.message; }
+};
+$('#codeBack').onclick = () => setMode(mode);
+
+// Esqueci minha senha
+$('#forgotLink').onclick = () => {
+  $('#forgotForm').reset(); $('#forgotErr').textContent = ''; ticket = null;
+  $('#forgotStep1').classList.remove('hidden'); $('#forgotStep2').classList.add('hidden');
+  $('#fEmail').required = true; $('#fCode').required = false; $('#fPass').required = false;
+  $('#forgotBtn').textContent = 'Enviar código';
+  screen(['#forgotForm'], 'Vamos criar uma <em>senha nova.</em>', 'Digite o e-mail da sua conta. Vamos enviar um código para você criar uma nova senha.');
+};
+$('#forgotBack').onclick = () => setMode('login');
+$('#forgotForm').onsubmit = async e => {
+  e.preventDefault(); $('#forgotBtn').disabled = true; $('#forgotErr').textContent = '';
+  try {
+    if (!ticket) {
+      const r = await api('/api/forgot', { method: 'POST', body: JSON.stringify({ email: $('#fEmail').value }) });
+      ticket = r.ticket;
+      $('#forgotStep1').classList.add('hidden'); $('#forgotStep2').classList.remove('hidden');
+      $('#fEmail').required = false; $('#fCode').required = true; $('#fPass').required = true;
+      $('#forgotBtn').textContent = 'Salvar nova senha';
+      $('#authLead').textContent = `Se ${$('#fEmail').value} tiver conta no Lumi, o código chega em instantes. Confira também a caixa de spam.`;
+    } else {
+      await api('/api/reset', { method: 'POST', body: JSON.stringify({ ticket, code: $('#fCode').value, password: $('#fPass').value }) });
+      await boot();
+    }
+  } catch (err) { $('#forgotErr').textContent = err.message; }
+  $('#forgotBtn').disabled = false;
+};
+$('#fCode').oninput = e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6); };
 
 // ---------- Painel ----------
 async function boot() {
