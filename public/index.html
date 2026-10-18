@@ -89,6 +89,7 @@ input{font:inherit}
 .sheet h3{padding-right:40px}
 .fab{transition:opacity .2s,transform .2s}
 .fab.away{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(20px)}
+.lifetime{display:inline-block;margin-top:12px;background:linear-gradient(90deg,var(--accent2),var(--accent));color:#24140a;font-weight:800;font-size:13px;padding:6px 12px;border-radius:99px}
 .err{color:var(--danger);font-size:14px;min-height:20px;margin:4px 0 10px}
 
 /* ---------- Painel ---------- */
@@ -236,6 +237,7 @@ input{font:inherit}
     <div class="bar"><i id="usedBar" style="width:0"></i></div>
     <div class="tip" id="meterTip">Envie seus arquivos e depois apague do iPhone com tranquilidade.</div>
     <button class="buybtn" id="buyBtn">Comprar mais espaço</button>
+    <span class="lifetime hidden" id="lifeTag">Plano vitalício</span>
   </div>
 
   <button class="addbtn" id="addTop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Adicionar arquivos</button>
@@ -507,6 +509,8 @@ async function refreshMe() { me = await api('/api/me'); renderMeter(); }
 function renderMeter() {
   $('#usedTxt').textContent = fmt(me.used);
   $('#quotaTxt').textContent = 'de ' + fmt(me.quota);
+  $('#buyBtn').classList.toggle('hidden', !!me.lifetime);
+  $('#lifeTag').classList.toggle('hidden', !me.lifetime);
   const p = Math.min(100, me.used / me.quota * 100);
   $('#usedBar').style.width = p + '%';
   const live = files.filter(f => !f.deletedAt).length;

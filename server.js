@@ -417,7 +417,7 @@ app.post('/api/mp/webhook', async (req, res) => {
 });
 
 app.get('/api/me', auth, (req, res) => {
-  res.json({ name: req.user.name, email: req.user.email, used: usedBytes(req.user.id), quota: quotaFor(req.user), needRecovery: !req.user.recHash });
+  res.json({ name: req.user.name, email: req.user.email, used: usedBytes(req.user.id), quota: quotaFor(req.user), lifetime: QUOTA_OVERRIDES.has(req.user.email), needRecovery: !req.user.recHash });
 });
 
 // ---------- Arquivos ----------
