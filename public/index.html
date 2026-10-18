@@ -58,21 +58,21 @@ input{font:inherit}
 .muted{color:var(--soft);font-size:14px;text-align:center;margin-top:14px}
 .buybtn{display:block;width:100%;margin-top:14px;padding:12px;border-radius:12px;border:1px solid var(--accent);color:var(--accent);font-weight:700;font-size:15px}
 .plans{display:grid;gap:10px;margin:6px 0 4px}
-.plan{display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:16px;border-radius:16px;border:1px solid var(--line);background:var(--card)}
+.plan{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;width:100%;text-align:left;padding:16px;border-radius:16px;border:1px solid var(--line);background:var(--card)}
 .plan.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
-.plan .gb{font-family:"Bricolage Grotesque",Inter,system-ui,-apple-system,sans-serif;font-size:24px;font-weight:800;min-width:96px}
-.plan .info{flex:1;color:var(--soft);font-size:13px;line-height:1.4}
-.plan .price{text-align:right;font-weight:700;font-size:17px;white-space:nowrap}
+.plan .gb{grid-column:1;grid-row:1;font-family:"Bricolage Grotesque",Inter,system-ui,-apple-system,sans-serif;font-size:clamp(20px,6.4vw,24px);font-weight:800;white-space:nowrap}
+.plan .info{grid-column:1;grid-row:2;color:var(--soft);font-size:13px;line-height:1.4}
+.plan .price{grid-column:2;grid-row:1/3;text-align:right;font-weight:700;font-size:17px;white-space:nowrap}
 .plan .price small{display:block;color:var(--soft);font-weight:500;font-size:12px}
-.plan .tag{display:inline-block;background:var(--accent);color:#24140a;font-size:11px;font-weight:700;padding:2px 7px;border-radius:99px;margin-bottom:4px}
+.plan .tag{display:inline-block;background:var(--accent);color:#24140a;font-size:11px;font-weight:700;padding:2px 7px;border-radius:99px;margin-right:6px;white-space:nowrap}
 .current{background:var(--card);border-radius:12px;padding:12px 14px;font-size:14px;margin-bottom:12px;color:var(--ink)}
 .hello{margin:0 0 16px}
 .hello h2{font-size:26px;line-height:1.15;margin:0 0 8px;font-weight:800;hyphens:none;-webkit-hyphens:none}
 .hello h2 span{color:var(--accent)}
 .safe{display:inline-flex;align-items:center;gap:7px;color:var(--soft);font-size:14px}
 .safe svg{width:17px;height:17px;flex:none;color:var(--accent2)}
-.trashbar{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px;font-size:14px;color:var(--soft)}
-.trashbar span{flex:1;min-width:0}
+.trashbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px;font-size:14px;color:var(--soft)}
+.trashbar span{flex:1 1 180px;min-width:0}
 .trashbar button{flex:none;padding:9px 12px;border-radius:10px;background:var(--danger);color:#fff;font-weight:700;font-size:13px}
 .tile .left{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.55);font-size:11px;padding:3px 6px;border-radius:6px}
 .chip.trash.on{background:var(--danger);border-color:var(--danger);color:#fff}
@@ -93,7 +93,7 @@ input{font:inherit}
 .err{color:var(--danger);font-size:14px;min-height:20px;margin:4px 0 10px}
 
 /* ---------- Painel ---------- */
-.app{max-width:960px;margin:0 auto;padding:16px 16px 120px}
+.app{max-width:960px;margin:0 auto;padding:16px max(16px,env(safe-area-inset-left)) 150px max(16px,env(safe-area-inset-right))}
 .top{display:flex;align-items:center;justify-content:space-between;padding:6px 0 18px}
 .top .logo{margin:0}
 .top .logo svg{width:34px;height:34px}
@@ -108,8 +108,8 @@ input{font:inherit}
 .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:99px;transition:width .4s}
 .meter .tip{margin-top:10px;font-size:13px;color:var(--soft)}
 
-.tools{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px;scrollbar-width:none}
-.chip{padding:9px 14px;border-radius:99px;border:1px solid var(--line);color:var(--soft);white-space:nowrap;font-size:14px}
+.tools{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.chip{padding:8px 13px;border-radius:99px;border:1px solid var(--line);color:var(--soft);white-space:nowrap;font-size:14px}
 .chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:600}
 .search{width:100%;padding:13px 16px;border-radius:14px;border:1px solid var(--line);background:var(--bg2);color:var(--ink);margin-bottom:12px;outline:none;font-size:16px}
 
@@ -128,9 +128,9 @@ input{font:inherit}
 
 /* botão flutuante */
 .fab{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(22px + env(safe-area-inset-bottom));background:var(--accent);color:#24140a;padding:16px 26px;border-radius:99px;font-weight:700;box-shadow:0 10px 30px rgba(255,179,107,.35);display:flex;gap:8px;align-items:center;z-index:5}
-.selbar{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px;display:flex;gap:8px;align-items:center;z-index:6;max-width:600px;margin:0 auto}
-.selbar span{flex:1;padding-left:6px}
-.selbar button{padding:10px 14px;border-radius:12px;background:var(--bg2);font-weight:600;font-size:14px}
+.selbar{position:fixed;left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right));bottom:calc(16px + env(safe-area-inset-bottom));background:var(--card);border:1px solid var(--line);border-radius:18px;padding:10px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;align-items:center;z-index:6;max-width:600px;margin:0 auto;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.selbar span{grid-column:1/-1;text-align:center;font-size:14px;color:var(--soft)}
+.selbar button{padding:11px 6px;border-radius:12px;background:var(--bg2);font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .selbar .del{background:var(--danger);color:#fff}
 
 /* upload */
@@ -534,9 +534,9 @@ function render() {
   $('#addEmpty').classList.toggle('hidden', files.length > 0);
   const inTrash = files.filter(f => f.deletedAt).length;
   $('#trashbar').classList.toggle('hidden', filter !== 'trash' || !inTrash);
-  $('#trashTxt').textContent = `${inTrash} item(ns) na lixeira. São apagados de vez depois de 30 dias.`;
+  $('#trashTxt').textContent = `${inTrash} ${inTrash === 1 ? 'item' : 'itens'} na lixeira. Tudo aqui é apagado de vez depois de 30 dias.`;
   $('#selDown').textContent = filter === 'trash' ? 'Restaurar' : 'Baixar';
-  $('#selDel').textContent = filter === 'trash' ? 'Apagar de vez' : 'Apagar';
+  $('#selDel').textContent = filter === 'trash' ? 'Excluir' : 'Apagar';
   if (!list.length && filter === 'trash') { $('#emptyTitle').textContent = 'A lixeira está vazia'; $('#emptyText').textContent = 'O que você apagar fica aqui por 30 dias, caso queira recuperar.'; }
   else if (!list.length && files.length) { $('#emptyTitle').textContent = 'Nada por aqui'; $('#emptyText').textContent = 'Nenhum arquivo combina com esse filtro.'; }
   else { $('#emptyTitle').textContent = 'Sua nuvem está vazia'; $('#emptyText').innerHTML = 'Toque em <b>Adicionar arquivos</b> e escolha fotos e vídeos da sua galeria.'; }
