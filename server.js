@@ -588,6 +588,10 @@ app.post('/api/upload/start', auth, paid, async (req, res) => {
   if (!list.length) return res.status(400).json({ error: 'Nenhum arquivo escolhido.' });
   const total = list.reduce((s, f) => s + Math.max(0, Number(f.size) || 0), 0);
   if (list.some(f => Number(f.size) > MAX_FILE_BYTES)) return res.status(413).json({ error: `Cada arquivo pode ter no máximo ${Math.round(MAX_FILE_BYTES / 1024 ** 3)} GB.` });
+  if (STORAGE_LIMIT_GB > 0 && totalStored() + total > STORAGE_LIMIT_GB * GB * 0.98) {
+    console.error('[capacidade] armazenamento quase cheio, envio recusado');
+    return res.status(507).json({ error: 'O Lumi está em manutenção de espaço. Tente enviar de novo em algumas horas.' });
+  }
   if (usedBytes(req.user.id) + total > quotaFor(req.user)) return res.status(413).json({ error: quotaFor(req.user) === 0 ? 'Você ainda não tem espaço. Escolha um plano para começar a guardar seus arquivos.' : 'Seu espaço acabou. Apague alguns arquivos ou compre mais espaço.', noSpace: true });
   try {
     const out = [];
@@ -776,6 +780,9 @@ function admin(req, res, next) {
   auth(req, res, () => isAdmin(req.user) ? next() : res.status(403).json({ error: 'Acesso só para o administrador.' }));
 }
 const GB = 1024 ** 3;
+// limite do armazenamento no Railway: 1 TB no plano Hobby. No plano Pro, defina STORAGE_LIMIT_GB maior (ou 0 = sem limite)
+const STORAGE_LIMIT_GB = process.env.STORAGE_LIMIT_GB !== undefined ? Number(process.env.STORAGE_LIMIT_GB) : 1000;
+const totalStored = () => db.files.reduce((s, f) => s + f.size, 0) + db.erased.reduce((s, f) => s + f.size, 0);
 function railwayDue() {
   const day = Math.min(28, Math.max(1, Number((db.settings || {}).railwayDueDay) || 18));
   const now = new Date();
@@ -800,6 +807,11 @@ app.get('/api/admin/summary', admin, (req, res) => {
     };
   }).sort((a, b) => b.used - a.used);
   res.json({
+    capacity: {
+      limitGB: STORAGE_LIMIT_GB, used: stored,
+      // espaço prometido aos clientes (soma das cotas, sem contar o admin)
+      sold: db.users.filter(u => !isAdmin(u)).reduce((s, u) => s + quotaFor(u), 0),
+    },
     railway: { ...railwayDue(), estimateUSD: +(5 + Math.max(0, Math.ceil(stored / GB) - 0) * 0.015).toFixed(2) },
     totals: {
       users: db.users.length, files: db.files.filter(f => !f.deletedAt).length, stored,

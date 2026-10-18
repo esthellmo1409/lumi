@@ -37,6 +37,11 @@ button{border:0;background:none;cursor:pointer}
 .btn{padding:10px 14px;border-radius:12px;background:var(--accent);color:#24140a;font-weight:700;font-size:14px}
 .btn.ghost{background:var(--bg2);color:var(--ink);border:1px solid var(--line)}
 .btn.red{background:var(--danger);color:#fff}
+.capbar{height:10px;background:#0c1229;border-radius:99px;overflow:hidden;margin-top:14px}
+.capbar i{display:block;height:100%;width:0;border-radius:99px;background:var(--ok);transition:width .4s}
+.capnote{margin:10px 0 0;font-size:14px;color:var(--soft);line-height:1.45}
+.warnbox{background:rgba(255,209,102,.1);border:1px solid rgba(255,209,102,.35);color:var(--warn);border-radius:12px;padding:10px 12px}
+.warnbox.bad{background:rgba(255,107,129,.1);border-color:rgba(255,107,129,.4);color:var(--danger)}
 .tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:14px}
 @media(min-width:640px){.tiles{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .tile{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
@@ -99,6 +104,23 @@ h2{font-family:var(--display);font-size:19px;margin:22px 0 10px}
       </div>
     </div>
 
+
+    <div class="card" id="capCard">
+      <span class="label">Armazenamento do Lumi no Railway</span>
+      <div class="due"><div><b id="capUsed">—</b><small id="capOf"></small></div><span class="pill" id="capPill"></span></div>
+      <div class="capbar"><i id="capBar"></i></div>
+      <p class="capnote" id="capSold"></p>
+      <p class="capnote warnbox hidden" id="capWarn"></p>
+    </div>
+
+    <div class="tiles">
+      <div class="tile"><span class="label">Clientes</span><b id="tUsers">0</b></div>
+      <div class="tile"><span class="label">Arquivos</span><b id="tFiles">0</b></div>
+      <div class="tile"><span class="label">Guardado</span><b id="tStored">0</b></div>
+      <div class="tile"><span class="label">Recebido no mês</span><b id="tRevenue">R$ 0</b></div>
+    </div>
+
+    <h2>Configurações</h2>
     <div class="card">
       <label class="switch">Contas novas começam sem espaço <input type="checkbox" id="zeroNew"></label>
       <p style="margin:8px 0 0;font-size:14px;color:var(--soft);line-height:1.45">Ligado: quem se cadastrar entra no Lumi normalmente, mas só consegue guardar arquivos depois de comprar um plano lá dentro. Clientes antigos continuam com o espaço que têm.</p>
@@ -107,13 +129,6 @@ h2{font-family:var(--display);font-size:19px;margin:22px 0 10px}
     <div class="card">
       <label class="switch">Contas novas precisam pagar um plano para entrar <input type="checkbox" id="pwNew"></label>
       <p style="margin:8px 0 0;font-size:14px;color:var(--soft);line-height:1.45">Ligado: quem se cadastrar a partir de agora vê a tela de pagamento logo depois de criar a conta. Clientes antigos e contas vitalícias não são afetados.</p>
-    </div>
-
-    <div class="tiles">
-      <div class="tile"><span class="label">Clientes</span><b id="tUsers">0</b></div>
-      <div class="tile"><span class="label">Arquivos</span><b id="tFiles">0</b></div>
-      <div class="tile"><span class="label">Guardado</span><b id="tStored">0</b></div>
-      <div class="tile"><span class="label">Recebido no mês</span><b id="tRevenue">R$ 0</b></div>
     </div>
 
     <h2>Clientes</h2>
@@ -203,6 +218,27 @@ async function load() {
   $('#dueDay').value = r.day;
   $('#pwNew').checked = data.paywallNew;
   $('#zeroNew').checked = data.newUsersZero;
+  const c = data.capacity;
+  $('#capUsed').textContent = fmt(c.used);
+  if (c.limitGB > 0) {
+    const pct = c.used / (c.limitGB * GB) * 100;
+    $('#capOf').textContent = `de ${c.limitGB >= 1000 ? (c.limitGB / 1000).toString().replace('.', ',') + ' TB' : c.limitGB + ' GB'} (plano Hobby) · ${fmt(Math.max(0, c.limitGB * GB - c.used))} livres`;
+    $('#capBar').style.width = Math.min(100, Math.max(pct, 0.6)) + '%';
+    $('#capBar').style.background = pct >= 90 ? 'var(--danger)' : pct >= 80 ? 'var(--warn)' : 'var(--ok)';
+    $('#capPill').textContent = pct < 1 ? 'Menos de 1% usado' : `${pct.toFixed(0)}% usado`;
+    $('#capPill').className = 'pill ' + (pct >= 90 ? 'bad' : pct >= 80 ? 'warn' : 'ok');
+    const w = $('#capWarn');
+    w.classList.toggle('hidden', pct < 80);
+    w.classList.toggle('bad', pct >= 90);
+    w.textContent = pct >= 90
+      ? 'O armazenamento está quase cheio. Passe agora para o plano Pro do Railway (US$ 20/mês, sem limite) e peça ao Claude para atualizar o limite do Lumi. Perto de 98%, o Lumi pausa novos envios para nada falhar.'
+      : 'Passou de 80%. Já vale planejar a troca para o plano Pro do Railway (US$ 20/mês, sem limite de espaço).';
+    $('#capSold').textContent = `Espaço prometido aos clientes: ${fmt(c.sold)}. Esse número pode passar do limite, porque quase ninguém usa todo o espaço que tem. O que importa é o espaço realmente usado.`;
+  } else {
+    $('#capOf').textContent = 'plano sem limite de espaço';
+    $('#capBar').style.width = '0'; $('#capPill').textContent = 'Sem limite'; $('#capPill').className = 'pill ok';
+    $('#capSold').textContent = `Espaço prometido aos clientes: ${fmt(c.sold)}.`;
+  }
   const t = data.totals;
   $('#tUsers').textContent = t.users; $('#tFiles').textContent = t.files;
   $('#tStored').textContent = fmt(t.stored); $('#tRevenue').textContent = brl(t.revenueMonth);
