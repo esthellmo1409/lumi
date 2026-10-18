@@ -139,7 +139,7 @@ input{font:inherit}
     <label class="field"><input name="email" type="email" placeholder="E-mail" autocomplete="email" required></label>
     <label class="field pw"><input name="password" type="password" placeholder="Senha (8+ caracteres, letras e números)" autocomplete="current-password" required></label>
     <div class="err" id="authErr"></div>
-    <button class="btn" id="authBtn">Criar minha conta grátis</button>
+    <button class="btn" id="authBtn">Criar minha conta</button>
   </form>
   <div class="switch" id="authSwitch">Já tem conta? <button type="button">Entrar</button></div>
   <button type="button" class="linkbtn hidden" id="forgotLink">Esqueci minha senha</button>
@@ -276,7 +276,7 @@ function setMode(m) {
   screens.forEach(sel => $(sel).classList.toggle('hidden', sel === '#codeForm' || sel === '#forgotForm' || (sel === '#forgotLink' && !(m === 'login' && emailOn))));
   $('#authLead').textContent = 'Guarde fotos, vídeos e documentos na sua nuvem e libere espaço no celular sem perder nada.';
   $('#nameField').classList.toggle('hidden', m === 'login');
-  $('#authBtn').textContent = m === 'login' ? 'Entrar' : 'Criar minha conta grátis';
+  $('#authBtn').textContent = m === 'login' ? 'Entrar' : 'Criar minha conta';
   $('#authTitle').innerHTML = m === 'login' ? 'Que bom te ver<br>de <em>novo.</em>' : 'Seu iPhone<br>leve de <em>novo.</em>';
   $('#authSwitch').innerHTML = m === 'login' ? 'Ainda não tem conta? <button type="button">Criar agora</button>' : 'Já tem conta? <button type="button">Entrar</button>';
   $('#authSwitch button').onclick = () => setMode(m === 'login' ? 'register' : 'login');
