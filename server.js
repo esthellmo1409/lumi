@@ -435,7 +435,7 @@ function kindOf(mime, name) {
   if (mime.startsWith('audio/')) return 'audio';
   return 'doc';
 }
-const publicFile = f => ({ id: f.id, name: f.name, size: f.size, mime: f.mime, kind: f.kind, fav: !!f.fav, createdAt: f.createdAt, deletedAt: f.deletedAt || null });
+const publicFile = f => ({ id: f.id, name: f.name, size: f.size, mime: f.mime, kind: f.kind, fav: !!f.fav, createdAt: f.createdAt, takenAt: f.takenAt || f.createdAt, thumb: !!f.thumbKey, deletedAt: f.deletedAt || null });
 
 app.get('/api/files', auth, (req, res) => {
   const list = db.files.filter(f => f.userId === req.user.id).sort((a, b) => b.createdAt - a.createdAt);
@@ -547,7 +547,13 @@ app.post('/api/upload/start', auth, async (req, res) => {
       const size = Math.max(0, Number(f.size) || 0);
       const mime = String(f.type || 'application/octet-stream').slice(0, 100);
       const meta = { uid: req.user.id, name: encodeURIComponent(String(f.name || 'arquivo').slice(0, 200)) };
-      const base = { userId: req.user.id, key, name: String(f.name || 'arquivo').slice(0, 200), size, mime, exp: Date.now() + 6 * 3600 * 1000 };
+      const takenAt = Number(f.takenAt) > 0 && Number(f.takenAt) < Date.now() + 864e5 ? Number(f.takenAt) : null;
+      const base = { userId: req.user.id, key, name: String(f.name || 'arquivo').slice(0, 200), size, mime, takenAt, exp: Date.now() + 6 * 3600 * 1000 };
+      // miniatura leve (até 400 KB) para a grade abrir rápido
+      const thumb = f.thumb ? await createPresignedPost(s3, {
+        Bucket: BUCKET, Key: key + '.t', Expires: 6 * 3600, Fields: { 'Content-Type': 'image/jpeg' },
+        Conditions: [['eq', '$key', key + '.t'], ['eq', '$Content-Type', 'image/jpeg'], ['content-length-range', 0, 400 * 1024]],
+      }) : null;
       // arquivos grandes: divididos em pedaços que sobem em paralelo
       if (size > MULTI_MIN) {
         let partSize = PART_SIZE;
@@ -557,7 +563,7 @@ app.post('/api/upload/start', auth, async (req, res) => {
         const urls = await Promise.all(Array.from({ length: n }, (_, i) =>
           getSignedUrl(s3, new S3.UploadPartCommand({ Bucket: BUCKET, Key: key, UploadId: mp.UploadId, PartNumber: i + 1 }), { expiresIn: 6 * 3600 })));
         pending.set(fid, { ...base, uploadId: mp.UploadId });
-        out.push({ id: fid, multipart: true, partSize, urls });
+        out.push({ id: fid, multipart: true, partSize, urls, thumb });
         continue;
       }
       const { url, fields } = await createPresignedPost(s3, {
@@ -567,7 +573,7 @@ app.post('/api/upload/start', auth, async (req, res) => {
         Conditions: [['eq', '$key', key], ['eq', '$Content-Type', mime], ['content-length-range', 0, size]],
       });
       pending.set(fid, base);
-      out.push({ id: fid, url, fields });
+      out.push({ id: fid, url, fields, thumb });
     }
     res.json(out);
   } catch (e) { console.error(e); res.status(500).json({ error: 'Não consegui preparar o envio. Tente de novo.' }); }
@@ -595,12 +601,23 @@ app.post('/api/upload/finish', auth, async (req, res) => {
         continue;
       }
       const rec = { id: fid, userId: req.user.id, name: p.name, size, mime: p.mime, kind: kindOf(p.mime, p.name), fav: false, storage: 's3', key: p.key, createdAt: Date.now() };
+      if (p.takenAt) rec.takenAt = p.takenAt;
+      if (it.thumb) {
+        try { await s3.send(new S3.HeadObjectCommand({ Bucket: BUCKET, Key: p.key + '.t' })); rec.thumbKey = p.key + '.t'; } catch {}
+      }
       db.files.push(rec); saved.push(publicFile(rec));
       pending.delete(fid);
     } catch (e) { console.error('[arquivos] envio não encontrado no bucket', fid, e.name); }
   }
   saveDb();
   res.json(saved);
+});
+
+app.get('/api/files/:id/thumb', auth, async (req, res) => {
+  const f = ownFile(req, res); if (!f) return;
+  if (!f.thumbKey) return res.redirect(302, `/api/files/${f.id}/view`);
+  res.setHeader('Cache-Control', 'private, max-age=1800');
+  res.redirect(302, await getSignedUrl(s3, new S3.GetObjectCommand({ Bucket: BUCKET, Key: f.thumbKey, ResponseContentType: 'image/jpeg' }), { expiresIn: 3600 }));
 });
 
 app.get('/api/files/:id/link', auth, async (req, res) => {
@@ -660,7 +677,11 @@ setInterval(async () => {
   const limit = Date.now() - SAFETY_DAYS * 24 * 3600 * 1000;
   const old = db.erased.filter(e => e.erasedAt < limit);
   for (const e of old) {
-    try { await s3.send(new S3.DeleteObjectCommand({ Bucket: BUCKET, Key: e.key })); db.erased = db.erased.filter(x => x !== e); }
+    try {
+      await s3.send(new S3.DeleteObjectCommand({ Bucket: BUCKET, Key: e.key }));
+      if (e.thumbKey) await s3.send(new S3.DeleteObjectCommand({ Bucket: BUCKET, Key: e.thumbKey })).catch(() => {});
+      db.erased = db.erased.filter(x => x !== e);
+    }
     catch (err) { console.error('[arquivos] falha ao remover', e.id, err.message); }
   }
   if (old.length) saveDb();

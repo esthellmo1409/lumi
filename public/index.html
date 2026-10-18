@@ -19,9 +19,9 @@
   --r:18px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif;min-height:100%}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,sans-serif;min-height:100%}
 body{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
-h1,h2,.brand{font-family:"Bricolage Grotesque",Inter,sans-serif;letter-spacing:-.02em}
+h1,h2,.brand{font-family:"Bricolage Grotesque",Inter,system-ui,-apple-system,sans-serif;letter-spacing:-.02em}
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 input{font:inherit}
 .hidden{display:none!important}
@@ -54,20 +54,20 @@ input{font:inherit}
 .addbtn svg{width:20px;height:20px}
 .empty .addbtn{width:auto;display:inline-flex;margin:20px 0 0;padding:14px 22px}
 .linkbtn{display:block;margin:14px auto 0;color:var(--accent2);font-weight:600;font-size:15px}
-.codein{font-family:"Bricolage Grotesque",Inter,sans-serif;font-size:30px!important;letter-spacing:12px;text-align:center;font-weight:700}
+.codein{font-family:"Bricolage Grotesque",Inter,system-ui,-apple-system,sans-serif;font-size:30px!important;letter-spacing:12px;text-align:center;font-weight:700}
 .muted{color:var(--soft);font-size:14px;text-align:center;margin-top:14px}
 .buybtn{display:block;width:100%;margin-top:14px;padding:12px;border-radius:12px;border:1px solid var(--accent);color:var(--accent);font-weight:700;font-size:15px}
 .plans{display:grid;gap:10px;margin:6px 0 4px}
 .plan{display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:16px;border-radius:16px;border:1px solid var(--line);background:var(--card)}
 .plan.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
-.plan .gb{font-family:"Bricolage Grotesque",Inter,sans-serif;font-size:24px;font-weight:800;min-width:96px}
+.plan .gb{font-family:"Bricolage Grotesque",Inter,system-ui,-apple-system,sans-serif;font-size:24px;font-weight:800;min-width:96px}
 .plan .info{flex:1;color:var(--soft);font-size:13px;line-height:1.4}
 .plan .price{text-align:right;font-weight:700;font-size:17px;white-space:nowrap}
 .plan .price small{display:block;color:var(--soft);font-weight:500;font-size:12px}
 .plan .tag{display:inline-block;background:var(--accent);color:#24140a;font-size:11px;font-weight:700;padding:2px 7px;border-radius:99px;margin-bottom:4px}
 .current{background:var(--card);border-radius:12px;padding:12px 14px;font-size:14px;margin-bottom:12px;color:var(--ink)}
 .hello{margin:0 0 16px}
-.hello h2{font-size:26px;line-height:1.15;margin:0 0 6px;font-weight:800;text-wrap:balance}
+.hello h2{font-size:26px;line-height:1.15;margin:0 0 8px;font-weight:800;hyphens:none;-webkit-hyphens:none}
 .hello h2 span{color:var(--accent)}
 .safe{display:inline-flex;align-items:center;gap:7px;color:var(--soft);font-size:14px}
 .safe svg{width:17px;height:17px;flex:none;color:var(--accent2)}
@@ -76,11 +76,19 @@ input{font:inherit}
 .trashbar button{flex:none;padding:9px 12px;border-radius:10px;background:var(--danger);color:#fff;font-weight:700;font-size:13px}
 .tile .left{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.55);font-size:11px;padding:3px 6px;border-radius:6px}
 .chip.trash.on{background:var(--danger);border-color:var(--danger);color:#fff}
-.reccode{font-family:"Bricolage Grotesque",Inter,sans-serif;font-size:28px;font-weight:800;letter-spacing:3px;text-align:center;background:var(--card);border:1px dashed var(--accent);color:var(--accent);border-radius:14px;padding:18px 10px;margin:4px 0 12px;user-select:all;-webkit-user-select:all}
+.reccode{font-family:"Bricolage Grotesque",Inter,system-ui,-apple-system,sans-serif;font-size:28px;font-weight:800;letter-spacing:3px;text-align:center;background:var(--card);border:1px dashed var(--accent);color:var(--accent);border-radius:14px;padding:18px 10px;margin:4px 0 12px;user-select:all;-webkit-user-select:all}
 .check{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--ink);margin:12px 0 14px;line-height:1.4}
 .check input{width:20px;height:20px;flex:none;margin:0;accent-color:var(--accent)}
 .btn:disabled{opacity:.45}
 .ghost{width:100%;padding:13px;border-radius:14px;border:1px solid var(--line);font-weight:600;margin-top:4px}
+.month{grid-column:1/-1;margin:14px 2px 4px;font-size:15px;font-weight:700;color:var(--ink);font-family:"Bricolage Grotesque",Inter,system-ui,-apple-system,sans-serif}
+.month:first-child{margin-top:2px}
+.hint{color:var(--soft);font-size:13px;margin:-4px 2px 8px}
+.sheet{position:relative}
+.sheetx{position:absolute;top:14px;right:14px;width:34px;height:34px;border-radius:50%;background:var(--card);display:grid;place-items:center;font-size:16px;color:var(--soft)}
+.sheet h3{padding-right:40px}
+.fab{transition:opacity .2s,transform .2s}
+.fab.away{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(20px)}
 .err{color:var(--danger);font-size:14px;min-height:20px;margin:4px 0 10px}
 
 /* ---------- Painel ---------- */
@@ -93,7 +101,7 @@ input{font:inherit}
 
 .meter{background:linear-gradient(135deg,#232e63,#1a2350);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-bottom:18px}
 .meter .row{display:flex;justify-content:space-between;align-items:baseline}
-.meter b{font-family:"Bricolage Grotesque";font-size:26px}
+.meter b{font-family:"Bricolage Grotesque",Inter,system-ui,-apple-system,sans-serif;font-size:26px}
 .meter small{color:var(--soft)}
 .bar{height:10px;background:#0c1229;border-radius:99px;overflow:hidden;margin-top:12px}
 .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:99px;transition:width .4s}
@@ -109,7 +117,7 @@ input{font:inherit}
 .tile{position:relative;aspect-ratio:1;background:var(--card);border-radius:10px;overflow:hidden}
 .tile img,.tile video{width:100%;height:100%;object-fit:cover;display:block}
 .tile .ic{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:8px;font-size:12px;color:var(--soft)}
-.tile .ic strong{display:block;font-size:22px;color:var(--accent2);margin-bottom:6px;font-family:"Bricolage Grotesque"}
+.tile .ic strong{display:block;font-size:22px;color:var(--accent2);margin-bottom:6px;font-family:"Bricolage Grotesque",Inter,system-ui,-apple-system,sans-serif}
 .tile .badge{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.55);font-size:11px;padding:3px 6px;border-radius:6px}
 .tile .star{position:absolute;left:6px;top:6px;color:var(--accent);font-size:14px}
 .tile.sel{outline:3px solid var(--accent);outline-offset:-3px}
@@ -129,9 +137,15 @@ input{font:inherit}
 .toast .bar{margin-top:8px}
 
 /* visualizador */
-.viewer{position:fixed;inset:0;background:rgba(5,8,20,.96);z-index:30;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+.viewer{position:fixed;inset:0;background:#05070f;z-index:30;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
 .viewer header{display:flex;align-items:center;gap:10px;padding:12px 14px}
-.viewer header .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.viewer header .nm{flex:1;min-width:0;font-weight:600}
+.viewer header .nm div{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.viewer header .nm small{display:block;color:var(--soft);font-weight:400;font-size:12px;margin-top:2px}
+.viewer .stage{position:relative;touch-action:pan-y}
+.vnav{position:absolute;top:50%;transform:translateY(-50%);width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.08);display:grid;place-items:center;font-size:20px;color:var(--ink)}
+.vnav.prev{left:10px}.vnav.next{right:10px}
+@media (hover:none){.vnav{display:none}}
 .viewer .stage{flex:1;display:grid;place-items:center;overflow:hidden;padding:8px}
 .viewer .stage img,.viewer .stage video{max-width:100%;max-height:100%;border-radius:8px}
 .viewer .stage iframe{width:100%;height:100%;border:0;background:#fff;border-radius:8px}
@@ -162,7 +176,8 @@ input{font:inherit}
   <form id="authForm" autocomplete="on">
     <label class="field" id="nameField"><input name="name" placeholder="Seu nome" autocomplete="name"></label>
     <label class="field"><input name="email" type="email" placeholder="E-mail" autocomplete="email" required></label>
-    <label class="field pw"><input name="password" type="password" placeholder="Senha (8+ caracteres, letras e números)" autocomplete="current-password" required></label>
+    <label class="field pw"><input name="password" type="password" placeholder="Senha" autocomplete="current-password" required></label>
+    <div class="hint" id="passHint">Use pelo menos 8 caracteres, com letras e números.</div>
     <div class="err" id="authErr"></div>
     <button class="btn" id="authBtn">Criar minha conta</button>
   </form>
@@ -180,7 +195,7 @@ input{font:inherit}
   <form id="recoverForm" class="hidden">
     <label class="field"><input id="rEmail" type="email" placeholder="E-mail da sua conta" autocomplete="email" required></label>
     <label class="field"><input id="rCode" placeholder="Código de recuperação (ex: K7PM-Q2XR-9HTW)" autocomplete="off" autocapitalize="characters" spellcheck="false" required></label>
-    <label class="field pw"><input id="rPass" type="password" placeholder="Nova senha (8+ caracteres, letras e números)" autocomplete="new-password" required></label>
+    <label class="field pw"><input id="rPass" type="password" placeholder="Nova senha (letras e números)" autocomplete="new-password" required></label>
     <div class="err" id="recoverErr"></div>
     <button class="btn" id="recoverBtn">Criar nova senha</button>
     <button type="button" class="linkbtn hidden" id="recoverByEmail">Receber um código por e-mail</button>
@@ -193,7 +208,7 @@ input{font:inherit}
     </div>
     <div id="forgotStep2" class="hidden">
       <label class="field"><input id="fCode" class="codein" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"></label>
-      <label class="field pw"><input id="fPass" type="password" placeholder="Nova senha (8+ caracteres, letras e números)" autocomplete="new-password"></label>
+      <label class="field pw"><input id="fPass" type="password" placeholder="Nova senha (letras e números)" autocomplete="new-password"></label>
     </div>
     <div class="err" id="forgotErr"></div>
     <button class="btn" id="forgotBtn">Enviar código</button>
@@ -212,7 +227,7 @@ input{font:inherit}
   </div>
 
   <div class="hello">
-    <h2>Seja bem-vindo(a), <span id="helloName"></span></h2>
+    <h2>Seja bem&#8209;vindo(a),<br><span id="helloName"></span></h2>
     <div class="safe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 9.5 4-1.2 7-5 7-9.5V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></svg>Aqui você tem segurança e privacidade.</div>
   </div>
 
@@ -266,9 +281,11 @@ input{font:inherit}
 <div class="viewer hidden" id="viewer">
   <header>
     <button class="round" id="vClose" aria-label="Fechar">✕</button>
-    <div class="nm" id="vName"></div>
+    <div class="nm"><div id="vName"></div><small id="vInfo"></small></div>
   </header>
   <div class="stage" id="vStage"></div>
+  <button class="vnav prev" id="vPrev" aria-label="Anterior">‹</button>
+  <button class="vnav next" id="vNext" aria-label="Próximo">›</button>
   <footer>
     <a id="vDown" href="#"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Salvar</a>
     <button id="vShare"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 15V4m0 0L8 8m4-4 4 4M6 12v7h12v-7"/></svg>Compartilhar</button>
@@ -327,7 +344,7 @@ input{font:inherit}
     <h3>Trocar senha</h3>
     <p>Os outros aparelhos conectados vão precisar entrar de novo.</p>
     <label class="field pw"><input id="pCur" type="password" placeholder="Senha atual" autocomplete="current-password" required></label>
-    <label class="field pw"><input id="pNew" type="password" placeholder="Nova senha (8+ caracteres, letras e números)" autocomplete="new-password" required></label>
+    <label class="field pw"><input id="pNew" type="password" placeholder="Nova senha (letras e números)" autocomplete="new-password" required></label>
     <div class="err" id="passErr"></div>
     <button class="btn" id="passBtn">Salvar nova senha</button>
   </form>
@@ -357,6 +374,8 @@ function setMode(m) {
   $('#authLead').textContent = 'Guarde fotos, vídeos e documentos na sua nuvem e libere espaço no celular sem perder nada.';
   $('#nameField').classList.toggle('hidden', m === 'login');
   $('#authBtn').textContent = m === 'login' ? 'Entrar' : 'Criar minha conta';
+  $('#passHint').classList.toggle('hidden', m === 'login');
+  document.querySelector('#authForm [name=password]').autocomplete = m === 'login' ? 'current-password' : 'new-password';
   $('#authTitle').innerHTML = m === 'login' ? 'Que bom te ver<br>de <em>novo.</em>' : 'Seu iPhone<br>leve de <em>novo.</em>';
   $('#authSwitch').innerHTML = m === 'login' ? 'Ainda não tem conta? <button type="button">Criar agora</button>' : 'Já tem conta? <button type="button">Entrar</button>';
   $('#authSwitch button').onclick = () => setMode(m === 'login' ? 'register' : 'login');
@@ -517,13 +536,23 @@ function render() {
   if (!list.length && filter === 'trash') { $('#emptyTitle').textContent = 'A lixeira está vazia'; $('#emptyText').textContent = 'O que você apagar fica aqui por 30 dias, caso queira recuperar.'; }
   else if (!list.length && files.length) { $('#emptyTitle').textContent = 'Nada por aqui'; $('#emptyText').textContent = 'Nenhum arquivo combina com esse filtro.'; }
   else { $('#emptyTitle').textContent = 'Sua nuvem está vazia'; $('#emptyText').innerHTML = 'Toque em <b>Adicionar arquivos</b> e escolha fotos e vídeos da sua galeria.'; }
+  // organiza por mês, usando a data original da foto quando existe
+  const when = f => filter === 'trash' ? f.deletedAt : (f.takenAt || f.createdAt);
+  list.sort((a, b) => when(b) - when(a));
+  let lastMonth = '';
   for (const f of list) {
+    const month = new Date(when(f)).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    if (month !== lastMonth && filter !== 'trash') {
+      lastMonth = month;
+      g.insertAdjacentHTML('beforeend', `<h4 class="month">${month[0].toUpperCase() + month.slice(1)}</h4>`);
+    }
     const t = document.createElement('div');
     t.className = 'tile' + (selected.has(f.id) ? ' sel' : '');
     const src = `/api/files/${f.id}/view`;
     const ext = (f.name.split('.').pop() || '').slice(0, 4).toUpperCase();
     const browserImg = f.kind === 'foto' && !/heic|heif/i.test(f.mime + f.name);
-    if (browserImg) t.innerHTML = `<img loading="lazy" src="${src}" alt="">`;
+    if (f.thumb) t.innerHTML = `<img loading="lazy" decoding="async" src="/api/files/${f.id}/thumb" alt="">${f.kind === 'video' ? '<span class="badge">▶ vídeo</span>' : ''}`;
+    else if (browserImg) t.innerHTML = `<img loading="lazy" decoding="async" src="${src}" alt="">`;
     else if (f.kind === 'video') t.innerHTML = `<video muted playsinline preload="metadata" src="${src}#t=0.1"></video><span class="badge">▶ vídeo</span>`;
     else t.innerHTML = `<div class="ic"><div><strong>${ext || 'ARQ'}</strong>${esc(f.name).slice(0, 40)}</div></div>`;
     if (f.fav) t.insertAdjacentHTML('beforeend', '<span class="star">★</span>');
@@ -600,6 +629,31 @@ async function uploadDirect(list) {
   uploading = true;
   try { return await uploadDirectInner(list); } finally { uploading = false; }
 }
+// Miniatura de 360px gerada no próprio iPhone, para a grade abrir rápido
+const canThumb = f => /^(image|video)\//.test(f.type) || /\.(heic|heif|jpe?g|png|mov|mp4)$/i.test(f.name);
+async function makeThumb(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    let src, w, h;
+    if (file.type.startsWith('video/') || /\.(mov|mp4)$/i.test(file.name)) {
+      const v = document.createElement('video');
+      v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+      await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = rej; setTimeout(() => rej(new Error('tempo')), 8000); });
+      v.currentTime = Math.min(1, (v.duration || 2) / 2);
+      await new Promise(res => { v.onseeked = res; setTimeout(res, 3000); });
+      src = v; w = v.videoWidth; h = v.videoHeight;
+    } else {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+      src = img; w = img.naturalWidth; h = img.naturalHeight;
+    }
+    if (!w || !h) return null;
+    const S = 360, sc = S / Math.min(w, h), c = document.createElement('canvas');
+    c.width = S; c.height = S;
+    c.getContext('2d').drawImage(src, (S - w * sc) / 2, (S - h * sc) / 2, w * sc, h * sc);
+    return await new Promise(r => c.toBlob(r, 'image/jpeg', 0.72));
+  } catch { return null; } finally { URL.revokeObjectURL(url); }
+}
+
 async function uploadDirectInner(list) {
   const total = list.reduce((s, f) => s + f.size, 0) || 1;
   const loaded = new Map(); // quanto já subiu de cada envio
@@ -643,13 +697,26 @@ async function uploadDirectInner(list) {
         }
       };
       await Promise.all(Array.from({ length: Math.min(4, n) }, worker));
-      return { id: slot.id, parts };
+      return withThumb(f, slot, { id: slot.id, parts });
     }
     const fd = new FormData();
     Object.entries(slot.fields).forEach(([k, v]) => fd.append(k, v));
     fd.append('file', f);
     await send('POST', slot.url, fd, slot.id, false);
-    return { id: slot.id };
+    return withThumb(f, slot, { id: slot.id });
+  }
+  async function withThumb(f, slot, item) {
+    if (!slot.thumb) return item;
+    try {
+      const blob = await makeThumb(f);
+      if (!blob) return item;
+      const fd = new FormData();
+      Object.entries(slot.thumb.fields).forEach(([k, v]) => fd.append(k, v));
+      fd.append('file', blob, 'thumb.jpg');
+      const r = await fetch(slot.thumb.url, { method: 'POST', body: fd });
+      if (r.ok) item.thumb = true;
+    } catch {}
+    return item;
   }
 
   toast('Preparando envio…', 0);
@@ -658,7 +725,7 @@ async function uploadDirectInner(list) {
     let slots;
     try {
       slots = await api('/api/upload/start', { method: 'POST', body: JSON.stringify({
-        files: batch.map(f => ({ name: f.name, size: f.size, type: f.type || 'application/octet-stream' })) }) });
+        files: batch.map(f => ({ name: f.name, size: f.size, type: f.type || 'application/octet-stream', takenAt: f.lastModified || null, thumb: canThumb(f) })) }) });
     } catch (err) { toast(err.message); hideToast(5000); refreshMe(); return; }
     // 3 arquivos subindo ao mesmo tempo
     let next = 0;
@@ -710,12 +777,13 @@ function openViewer(f) {
   current = f;
   const src = `/api/files/${f.id}/view`;
   $('#vName').textContent = f.name;
+  $('#vInfo').textContent = `${fmt(f.size)} · ${new Date(f.takenAt || f.createdAt).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' })}`;
   const st = $('#vStage');
   if (f.kind === 'foto') st.innerHTML = `<img src="${src}" alt="">`;
   else if (f.kind === 'video') st.innerHTML = `<video src="${src}" controls playsinline autoplay></video>`;
   else if (f.kind === 'audio') st.innerHTML = `<audio src="${src}" controls autoplay></audio>`;
   else if (/pdf|text/.test(f.mime)) st.innerHTML = `<iframe src="${src}"></iframe>`;
-  else st.innerHTML = `<div style="text-align:center;color:var(--soft)"><div style="font-size:42px;font-family:'Bricolage Grotesque';color:var(--accent2)">${esc((f.name.split('.').pop() || 'ARQ').toUpperCase())}</div>${fmt(f.size)}<br>Toque em Salvar para abrir no iPhone.</div>`;
+  else st.innerHTML = `<div style="text-align:center;color:var(--soft)"><div style="font-size:42px;font-family:Inter,system-ui,-apple-system,sans-serif;font-weight:800;color:var(--accent2)">${esc((f.name.split('.').pop() || 'ARQ').toUpperCase())}</div>${fmt(f.size)}<br>Toque em Salvar para abrir no iPhone.</div>`;
   $('#vDown').href = `/api/files/${f.id}/download`;
   $('#vFavTxt').textContent = f.fav ? 'Desfavoritar' : 'Favoritar';
   $('#vRestore').classList.toggle('hidden', !f.deletedAt);
@@ -724,6 +792,29 @@ function openViewer(f) {
   $('#vDelTxt').textContent = f.deletedAt ? 'Apagar de vez' : 'Apagar';
   $('#viewer').classList.remove('hidden');
 }
+// passar para a próxima / anterior: deslizando o dedo, pelas setas ou pelo teclado
+function stepViewer(dir) {
+  const when = f => filter === 'trash' ? f.deletedAt : (f.takenAt || f.createdAt);
+  const list = visible().sort((a, b) => when(b) - when(a));
+  const i = list.findIndex(f => f.id === current.id);
+  const n = list[i + dir];
+  if (n) openViewer(n);
+}
+$('#vPrev').onclick = () => stepViewer(-1);
+$('#vNext').onclick = () => stepViewer(1);
+let touchX = null;
+$('#vStage').addEventListener('touchstart', e => { touchX = e.touches.length === 1 ? e.touches[0].clientX : null; }, { passive: true });
+$('#vStage').addEventListener('touchend', e => {
+  if (touchX === null) return;
+  const dx = e.changedTouches[0].clientX - touchX; touchX = null;
+  if (Math.abs(dx) > 60) stepViewer(dx < 0 ? 1 : -1);
+});
+document.addEventListener('keydown', e => {
+  if ($('#viewer').classList.contains('hidden')) return;
+  if (e.key === 'ArrowRight') stepViewer(1);
+  if (e.key === 'ArrowLeft') stepViewer(-1);
+  if (e.key === 'Escape') $('#vClose').click();
+});
 $('#vClose').onclick = () => { $('#viewer').classList.add('hidden'); $('#vStage').innerHTML = ''; };
 $('#vFav').onclick = async () => {
   const upd = await api(`/api/files/${current.id}`, { method: 'PATCH', body: JSON.stringify({ fav: !current.fav }) });
@@ -835,6 +926,19 @@ document.querySelectorAll('.pw').forEach(wrap => {
   wrap.appendChild(b);
 });
 $('#passForm').addEventListener('reset', () => document.querySelectorAll('#passForm .pw input').forEach(i => i.type = 'password'));
+
+// botão de fechar nas telas que sobem de baixo
+document.querySelectorAll('.menu').forEach(m => {
+  if (m.id === 'recSheet') return;
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'sheetx'; b.setAttribute('aria-label', 'Fechar'); b.textContent = '✕';
+  b.onclick = () => m.classList.add('hidden');
+  m.querySelector('.sheet').prepend(b);
+});
+// o botão flutuante só aparece quando o botão de cima sai da tela
+if ('IntersectionObserver' in window) {
+  new IntersectionObserver(([e]) => $('#fab').classList.toggle('away', e.isIntersecting)).observe($('#addTop'));
+}
 
 boot();
 </script>
