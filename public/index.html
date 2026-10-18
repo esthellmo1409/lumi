@@ -481,7 +481,7 @@ input,select{font:inherit;color:inherit}
 
 <div class="menu hidden" id="planSheet">
   <div class="sheet">
-    <h3>Mais espaço no Lumi</h3>
+    <h3 id="planTitle">Mais espaço no Lumi</h3>
     <p id="planLead">Escolha quanto espaço extra você quer. Paga com Pix ou cartão, e vale por 30 dias.</p>
     <div class="current hidden" id="planCurrent"></div>
     <div class="plans" id="planList"></div>
@@ -740,14 +740,18 @@ async function boot(skipRecovery) {
 }
 async function refreshMe() { me = await api('/api/me'); renderMeter(); }
 function renderMeter() {
-  $('#usedTxt').textContent = fmt(me.used);
-  $('#quotaTxt').textContent = 'de ' + fmt(me.quota);
+  const noSpace = !me.quota;
+  $('#usedTxt').textContent = noSpace ? '0 GB' : fmt(me.used);
+  $('#quotaTxt').textContent = noSpace ? 'nenhum plano ainda' : 'de ' + fmt(me.quota);
+  $('#buyBtn').lastChild.textContent = noSpace ? 'Escolher meu plano' : 'Comprar mais espaço';
   $('#buyBtn').classList.toggle('hidden', !!me.lifetime);
   $('#lifeTag').classList.toggle('hidden', !me.lifetime);
-  const p = Math.min(100, me.used / me.quota * 100);
+  const p = noSpace ? 0 : Math.min(100, me.used / me.quota * 100);
   $('#usedBar').style.width = p + '%';
   const live = files.filter(f => !f.deletedAt).length;
-  $('#meterTip').textContent = live
+  $('#meterTip').textContent = noSpace
+    ? 'Escolha um plano para começar a guardar suas fotos, vídeos e documentos.'
+    : live
     ? `${live} arquivo${live > 1 ? 's' : ''} guardado${live > 1 ? 's' : ''} com segurança. Já pode apagar do iPhone o que está aqui.`
     : 'Envie seus arquivos e depois apague do iPhone com tranquilidade.';
 }
@@ -765,6 +769,7 @@ function render() {
   const g = $('#grid'); g.innerHTML = '';
   $('#empty').classList.toggle('hidden', list.length > 0);
   $('#addEmpty').classList.toggle('hidden', files.length > 0);
+  $('#addEmpty').lastChild.textContent = (me && !me.quota) ? 'Ver planos' : 'Adicionar arquivos';
   const inTrash = files.filter(f => f.deletedAt).length;
   $('#trashbar').classList.toggle('hidden', filter !== 'trash' || !inTrash);
   $('#trashTxt').textContent = `${inTrash} ${inTrash === 1 ? 'item' : 'itens'} na lixeira. Tudo aqui é apagado de vez depois de 30 dias.`;
@@ -772,6 +777,7 @@ function render() {
   $('#selDel').textContent = filter === 'trash' ? 'Excluir' : 'Apagar';
   if (!list.length && filter === 'trash') { $('#emptyTitle').textContent = 'A lixeira está vazia'; $('#emptyText').textContent = 'O que você apagar fica aqui por 30 dias, caso queira recuperar.'; }
   else if (!list.length && files.length) { $('#emptyTitle').textContent = 'Nada por aqui'; $('#emptyText').textContent = 'Nenhum arquivo combina com esse filtro.'; }
+  else if (me && !me.quota) { $('#emptyTitle').textContent = 'Escolha seu plano para começar'; $('#emptyText').textContent = 'Sua conta está pronta. Escolha quanto espaço você quer e já pode guardar suas fotos e vídeos.'; }
   else { $('#emptyTitle').textContent = 'Sua nuvem está vazia'; $('#emptyText').innerHTML = 'Toque em <b>Adicionar arquivos</b> e escolha fotos e vídeos da sua galeria.'; }
   // organiza por mês, usando a data original da foto quando existe
   const when = f => filter === 'trash' ? f.deletedAt : (f.takenAt || f.createdAt);
@@ -850,9 +856,10 @@ $('#emptyTrash').onclick = async () => {
 };
 
 // ---------- Envio ----------
-$('#fab').onclick = () => $('#picker').click();
-$('#addTop').onclick = () => $('#picker').click();
-$('#addEmpty').onclick = () => $('#picker').click();
+const pickOrBuy = () => (me && !me.quota) ? openPlans() : $('#picker').click();
+$('#fab').onclick = pickOrBuy;
+$('#addTop').onclick = pickOrBuy;
+$('#addEmpty').onclick = pickOrBuy;
 $('#picker').onchange = e => { if (e.target.files.length) uploadFiles([...e.target.files]); e.target.value = ''; };
 function toast(txt, progress) {
   $('#toast').classList.remove('hidden'); $('#toastTxt').textContent = txt;
@@ -964,7 +971,11 @@ async function uploadDirectInner(list) {
     try {
       slots = await api('/api/upload/start', { method: 'POST', body: JSON.stringify({
         files: batch.map(f => ({ name: f.name, size: f.size, type: f.type || 'application/octet-stream', takenAt: f.lastModified || null, thumb: canThumb(f) })) }) });
-    } catch (err) { toast(err.message); hideToast(5000); refreshMe(); return; }
+    } catch (err) {
+      toast(err.message); hideToast(5000); refreshMe();
+      if (/espaço/i.test(err.message)) setTimeout(openPlans, 800);
+      return;
+    }
     // 3 arquivos subindo ao mesmo tempo
     let next = 0;
     const worker = async () => {
@@ -1099,14 +1110,17 @@ async function openPlans() {
   $('#planSheet').classList.remove('hidden');
   try {
     const d = await api('/api/plans');
-    $('#planLead').textContent = `Seu plano inclui ${d.baseGB} GB. Escolha quanto espaço extra você quer. Paga com Pix ou cartão, e vale por 30 dias.`;
+    $('#planTitle').textContent = d.baseGB ? 'Mais espaço no Lumi' : 'Escolha seu plano';
+    $('#planLead').textContent = d.baseGB
+      ? `Seu plano inclui ${d.baseGB} GB. Escolha quanto espaço extra você quer. Paga com Pix ou cartão, e vale por 30 dias.`
+      : 'Escolha quanto espaço você quer para guardar seus arquivos. Paga com Pix ou cartão, e vale por 30 dias.';
     const cur = $('#planCurrent');
     cur.classList.toggle('hidden', !d.current);
     if (d.current) cur.textContent = `Você tem ${d.current.name} até ${new Date(d.current.until).toLocaleDateString('pt-BR')}. Comprar o mesmo plano soma mais 30 dias.`;
     $('#planList').innerHTML = d.plans.map(p => `
       <button type="button" class="plan${p.id === planChoice ? ' on' : ''}" data-id="${p.id}">
-        <span class="gb">${p.name}</span>
-        <span class="info">${p.id === 'mais100' ? '<span class="tag">Mais escolhido</span><br>' : ''}${brl(p.price / p.gb)} por GB</span>
+        <span class="gb">${d.baseGB ? p.name : p.name.replace('+', '')}</span>
+        <span class="info">${p.id === 'mais100' ? '<span class="tag">Mais escolhido</span>' : ''}${brl(p.price / p.gb)} por GB</span>
         <span class="price">${brl(p.price)}<small>por mês</small></span>
       </button>`).join('');
     document.querySelectorAll('.plan').forEach(b => b.onclick = () => {

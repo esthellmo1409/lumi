@@ -100,6 +100,11 @@ h2{font-family:var(--display);font-size:19px;margin:22px 0 10px}
     </div>
 
     <div class="card">
+      <label class="switch">Contas novas começam sem espaço <input type="checkbox" id="zeroNew"></label>
+      <p style="margin:8px 0 0;font-size:14px;color:var(--soft);line-height:1.45">Ligado: quem se cadastrar entra no Lumi normalmente, mas só consegue guardar arquivos depois de comprar um plano lá dentro. Clientes antigos continuam com o espaço que têm.</p>
+    </div>
+
+    <div class="card">
       <label class="switch">Contas novas precisam pagar um plano para entrar <input type="checkbox" id="pwNew"></label>
       <p style="margin:8px 0 0;font-size:14px;color:var(--soft);line-height:1.45">Ligado: quem se cadastrar a partir de agora vê a tela de pagamento logo depois de criar a conta. Clientes antigos e contas vitalícias não são afetados.</p>
     </div>
@@ -197,6 +202,7 @@ async function load() {
   pill.className = 'pill ' + (r.daysLeft <= 3 ? 'bad' : r.daysLeft <= 7 ? 'warn' : 'ok');
   $('#dueDay').value = r.day;
   $('#pwNew').checked = data.paywallNew;
+  $('#zeroNew').checked = data.newUsersZero;
   const t = data.totals;
   $('#tUsers').textContent = t.users; $('#tFiles').textContent = t.files;
   $('#tStored').textContent = fmt(t.stored); $('#tRevenue').textContent = brl(t.revenueMonth);
@@ -221,6 +227,7 @@ function renderUsers() {
         ${u.lifetime ? '<span class="tag life">Vitalício</span>' : ''}
         ${u.plan ? `<span class="tag paid">${esc(u.plan.name)} até ${date(u.plan.until)}</span>` : ''}
         ${u.customGB ? `<span class="tag">${u.customGB} GB definido</span>` : ''}
+        ${u.zeroBase ? '<span class="tag">Sem espaço grátis</span>' : ''}
         ${u.blocked ? '<span class="tag blk">Suspensa</span>' : ''}
         ${u.requirePayment ? `<span class="tag ${u.locked ? 'blk' : 'paid'}">${u.locked ? 'Aguardando pagamento' : 'Cobrança paga'}</span>` : ''}
         <span class="tag">${u.files} arquivo${u.files === 1 ? '' : 's'}</span>
@@ -237,9 +244,10 @@ function openUser(u) {
   $('#sUse').textContent = `${fmt(u.used)} usados de ${fmt(u.quota)} · cliente desde ${date(u.createdAt)}`;
   $('#sQuotaTxt').textContent = u.customGB
     ? `Esta conta tem ${u.customGB} GB definidos por você, no lugar dos ${data.defaultGB} GB padrão.`
+    : u.zeroBase ? `Conta nova, sem espaço grátis: só guarda arquivos com plano pago. "Voltar ao padrão" dá ${data.defaultGB} GB grátis.`
     : `Esta conta usa o espaço padrão de ${data.defaultGB} GB.`;
   $('#sGB').value = u.customGB || '';
-  $('#sResetGB').classList.toggle('hidden', !u.customGB);
+  $('#sResetGB').classList.toggle('hidden', !u.customGB && !u.zeroBase);
   $('#sLife').checked = u.lifetime; $('#sLife').disabled = u.lifetimeFromEnv;
   $('#sLifeNote').textContent = u.lifetimeFromEnv
     ? 'Vitalício fixo nas configurações do servidor. Para mudar, peça ao Claude.'
@@ -288,6 +296,10 @@ $('#sCancel').onclick = () => { if (confirm('Cancelar o plano pago desta conta a
 $('#sBlock').onclick = () => {
   if (!cur.blocked && !confirm(`Suspender a conta de ${cur.name}? Ela não vai conseguir entrar até você reativar.`)) return;
   change({ blocked: !cur.blocked }, cur.blocked ? 'Conta reativada.' : 'Conta suspensa.');
+};
+$('#zeroNew').onchange = async e => {
+  try { await api('/api/admin/settings', { method: 'POST', body: JSON.stringify({ newUsersZero: e.target.checked }) }); toast(e.target.checked ? 'Contas novas vão começar sem espaço.' : `Contas novas vão ganhar ${data.defaultGB} GB grátis.`); }
+  catch (err) { toast(err.message); e.target.checked = !e.target.checked; }
 };
 $('#pwNew').onchange = async e => {
   try { await api('/api/admin/settings', { method: 'POST', body: JSON.stringify({ paywallNew: e.target.checked }) }); toast(e.target.checked ? 'Contas novas vão precisar pagar para entrar.' : 'Contas novas entram de graça com o espaço padrão.'); }

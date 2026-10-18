@@ -231,6 +231,8 @@ app.post('/api/register', async (req, res) => {
   const user = { id: id(), name, email, hash: await bcrypt.hash(password, 12), tv: 0, verified: false, devices: [], createdAt: Date.now() };
   // opção do admin: toda conta nova precisa pagar um plano para usar
   if ((db.settings || {}).paywallNew && !QUOTA_OVERRIDES.has(email) && !ADMIN_EMAILS.includes(email)) user.requirePayment = true;
+  // contas novas começam sem espaço e compram lá dentro (pode desligar no painel do admin)
+  if ((db.settings || {}).newUsersZero !== false && !QUOTA_OVERRIDES.has(email) && !ADMIN_EMAILS.includes(email)) user.zeroBase = true;
   db.users.push(user); saveDb();
   finishLogin(req, res, user, 'verify');
 });
@@ -362,9 +364,11 @@ const PUBLIC_URL = process.env.PUBLIC_URL || (process.env.RAILWAY_PUBLIC_DOMAIN 
 console.log(MP_TOKEN ? '[pagamentos] Mercado Pago ATIVADO' : '[pagamentos] Mercado Pago desativado (defina MERCADOPAGO_ACCESS_TOKEN)');
 
 const activePlan = user => (user.plan && PLANS[user.plan] && user.planUntil > Date.now()) ? PLANS[user.plan] : null;
+// espaço próprio da conta (sem contar plano pago): definido pelo admin, zero para contas novas, ou o padrão
+const baseBytes = user => user.customGB > 0 ? user.customGB * 1024 ** 3 : (user.zeroBase ? 0 : QUOTA_BYTES);
 function quotaFor(user) {
   const plan = activePlan(user);
-  const own = user.customGB > 0 ? user.customGB * 1024 ** 3 : QUOTA_BYTES; // espaço definido pelo admin substitui o padrão
+  const own = baseBytes(user);
   const base = own + (plan ? plan.gb * 1024 ** 3 : 0);
   return Math.max(base, QUOTA_OVERRIDES.get(user.email) || 0);
 }
@@ -373,7 +377,7 @@ app.get('/api/plans', auth, (req, res) => {
   const plan = activePlan(req.user);
   res.json({
     payments: !!MP_TOKEN,
-    baseGB: Math.round(QUOTA_BYTES / 1024 ** 3),
+    baseGB: Math.round(baseBytes(req.user) / 1024 ** 3),
     current: plan ? { id: req.user.plan, name: plan.name, until: req.user.planUntil } : null,
     plans: Object.entries(PLANS).map(([id, p]) => ({ id, name: p.name, gb: p.gb, price: p.price })),
   });
@@ -467,7 +471,7 @@ app.post('/api/upload', auth, paid, upload.array('files', 50), (req, res) => {
   const total = incoming.reduce((s, f) => s + f.size, 0);
   if (usedBytes(req.user.id) + total > quotaFor(req.user)) {
     incoming.forEach(f => fs.unlink(f.path, () => {}));
-    return res.status(413).json({ error: 'Seu espaço acabou. Apague alguns arquivos para enviar mais.' });
+    return res.status(413).json({ error: quotaFor(req.user) === 0 ? 'Você ainda não tem espaço. Escolha um plano para começar a guardar seus arquivos.' : 'Seu espaço acabou. Apague alguns arquivos ou compre mais espaço.', noSpace: true });
   }
   const saved = incoming.map(f => {
     // nomes vindos do iPhone chegam em latin1 pelo multer
@@ -559,7 +563,7 @@ app.post('/api/upload/start', auth, paid, async (req, res) => {
   if (!list.length) return res.status(400).json({ error: 'Nenhum arquivo escolhido.' });
   const total = list.reduce((s, f) => s + Math.max(0, Number(f.size) || 0), 0);
   if (list.some(f => Number(f.size) > MAX_FILE_BYTES)) return res.status(413).json({ error: `Cada arquivo pode ter no máximo ${Math.round(MAX_FILE_BYTES / 1024 ** 3)} GB.` });
-  if (usedBytes(req.user.id) + total > quotaFor(req.user)) return res.status(413).json({ error: 'Seu espaço acabou. Apague alguns arquivos para enviar mais.' });
+  if (usedBytes(req.user.id) + total > quotaFor(req.user)) return res.status(413).json({ error: quotaFor(req.user) === 0 ? 'Você ainda não tem espaço. Escolha um plano para começar a guardar seus arquivos.' : 'Seu espaço acabou. Apague alguns arquivos ou compre mais espaço.', noSpace: true });
   try {
     const out = [];
     for (const f of list) {
@@ -764,7 +768,7 @@ app.get('/api/admin/summary', admin, (req, res) => {
     return {
       id: u.id, name: u.name, email: u.email, createdAt: u.createdAt,
       used: usedBytes(u.id), files: db.files.filter(f => f.userId === u.id && !f.deletedAt).length,
-      quota: quotaFor(u), customGB: u.customGB || null,
+      quota: quotaFor(u), customGB: u.customGB || null, zeroBase: !!u.zeroBase && !(u.customGB > 0),
       lifetime: !!u.lifetime || QUOTA_OVERRIDES.has(u.email), lifetimeFromEnv: QUOTA_OVERRIDES.has(u.email),
       plan: plan ? { name: plan.name, until: u.planUntil } : null,
       blocked: !!u.blocked, admin: isAdmin(u), requirePayment: !!u.requirePayment, locked: isLocked(u),
@@ -778,7 +782,7 @@ app.get('/api/admin/summary', admin, (req, res) => {
       activePlans: db.users.filter(u => activePlan(u)).length,
     },
     users, payments: payments.slice(0, 30).map(p => ({ ...p, email: (db.users.find(u => u.id === p.userId) || {}).email || '—', plan: (PLANS[p.planId] || {}).name || p.planId })),
-    defaultGB: Math.round(QUOTA_BYTES / GB), plans: PLANS, paywallNew: !!(db.settings || {}).paywallNew,
+    defaultGB: Math.round(QUOTA_BYTES / GB), plans: PLANS, paywallNew: !!(db.settings || {}).paywallNew, newUsersZero: (db.settings || {}).newUsersZero !== false,
   });
 });
 
@@ -786,7 +790,7 @@ app.post('/api/admin/user/:id', admin, (req, res) => {
   const u = db.users.find(x => x.id === req.params.id);
   if (!u) return res.status(404).json({ error: 'Cliente não encontrado.' });
   const b = req.body || {};
-  if ('customGB' in b) { const g = Number(b.customGB); u.customGB = g > 0 ? Math.min(g, 1024) : undefined; }
+  if ('customGB' in b) { const g = Number(b.customGB); u.customGB = g > 0 ? Math.min(g, 1024) : undefined; if (g > 0 || b.customGB === null) u.zeroBase = undefined; }
   if ('lifetime' in b) u.lifetime = !!b.lifetime;
   if (b.addDays && PLANS[b.planId]) {
     const start = (u.plan === b.planId && u.planUntil > Date.now()) ? u.planUntil : Date.now();
@@ -808,6 +812,7 @@ app.post('/api/admin/settings', admin, (req, res) => {
   const d = Number(req.body.railwayDueDay);
   if (d >= 1 && d <= 28) db.settings.railwayDueDay = d;
   if ('paywallNew' in req.body) db.settings.paywallNew = !!req.body.paywallNew;
+  if ('newUsersZero' in req.body) db.settings.newUsersZero = !!req.body.newUsersZero;
   saveDb(); res.json({ ok: true, railway: railwayDue() });
 });
 
