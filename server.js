@@ -523,8 +523,15 @@ async function signedGet(f, disposition) {
 }
 
 // Envio direto do iPhone para o bucket
-const pending = new Map(); // id -> { userId, key, name, size, mime, exp }
-setInterval(() => { const now = Date.now(); for (const [k, p] of pending) if (p.exp < now) pending.delete(k); }, 10 * 60 * 1000);
+const pending = new Map(); // id -> { userId, key, name, size, mime, exp, uploadId? }
+const MULTI_MIN = 20 * 1024 * 1024, PART_SIZE = 10 * 1024 * 1024;
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, p] of pending) if (p.exp < now) {
+    pending.delete(k);
+    if (p.uploadId) s3.send(new S3.AbortMultipartUploadCommand({ Bucket: BUCKET, Key: p.key, UploadId: p.uploadId })).catch(() => {});
+  }
+}, 10 * 60 * 1000);
 
 app.post('/api/upload/start', auth, async (req, res) => {
   if (!S3_ON) return res.status(400).json({ error: 'Envio direto indisponível.' });
@@ -539,13 +546,27 @@ app.post('/api/upload/start', auth, async (req, res) => {
       const fid = id(), key = `u/${req.user.id}/${fid}`;
       const size = Math.max(0, Number(f.size) || 0);
       const mime = String(f.type || 'application/octet-stream').slice(0, 100);
+      const meta = { uid: req.user.id, name: encodeURIComponent(String(f.name || 'arquivo').slice(0, 200)) };
+      const base = { userId: req.user.id, key, name: String(f.name || 'arquivo').slice(0, 200), size, mime, exp: Date.now() + 6 * 3600 * 1000 };
+      // arquivos grandes: divididos em pedaços que sobem em paralelo
+      if (size > MULTI_MIN) {
+        let partSize = PART_SIZE;
+        while (Math.ceil(size / partSize) > 10000) partSize *= 2;
+        const n = Math.ceil(size / partSize);
+        const mp = await s3.send(new S3.CreateMultipartUploadCommand({ Bucket: BUCKET, Key: key, ContentType: mime, Metadata: meta }));
+        const urls = await Promise.all(Array.from({ length: n }, (_, i) =>
+          getSignedUrl(s3, new S3.UploadPartCommand({ Bucket: BUCKET, Key: key, UploadId: mp.UploadId, PartNumber: i + 1 }), { expiresIn: 6 * 3600 })));
+        pending.set(fid, { ...base, uploadId: mp.UploadId });
+        out.push({ id: fid, multipart: true, partSize, urls });
+        continue;
+      }
       const { url, fields } = await createPresignedPost(s3, {
         Bucket: BUCKET, Key: key, Expires: 3 * 3600,
         // dados do dono gravados junto do arquivo, como garantia extra
         Fields: { 'Content-Type': mime, 'x-amz-meta-uid': req.user.id, 'x-amz-meta-name': encodeURIComponent(String(f.name || 'arquivo').slice(0, 200)) },
         Conditions: [['eq', '$key', key], ['eq', '$Content-Type', mime], ['content-length-range', 0, size]],
       });
-      pending.set(fid, { userId: req.user.id, key, name: String(f.name || 'arquivo').slice(0, 200), size, mime, exp: Date.now() + 3 * 3600 * 1000 });
+      pending.set(fid, base);
       out.push({ id: fid, url, fields });
     }
     res.json(out);
@@ -553,15 +574,23 @@ app.post('/api/upload/start', auth, async (req, res) => {
 });
 
 app.post('/api/upload/finish', auth, async (req, res) => {
-  const ids = Array.isArray(req.body.ids) ? req.body.ids.slice(0, 50) : [];
+  const items = Array.isArray(req.body.items) ? req.body.items.slice(0, 50)
+    : (Array.isArray(req.body.ids) ? req.body.ids.slice(0, 50).map(id => ({ id })) : []);
   const saved = [];
-  for (const fid of ids) {
-    const p = pending.get(String(fid));
+  for (const it of items) {
+    const fid = String(it.id);
+    const p = pending.get(fid);
     if (!p || p.userId !== req.user.id) continue;
     try {
+      if (p.uploadId) {
+        const parts = (Array.isArray(it.parts) ? it.parts : [])
+          .map(x => ({ PartNumber: Number(x.n), ETag: String(x.etag || '') }))
+          .filter(x => x.PartNumber > 0 && x.ETag).sort((a, b) => a.PartNumber - b.PartNumber);
+        await s3.send(new S3.CompleteMultipartUploadCommand({ Bucket: BUCKET, Key: p.key, UploadId: p.uploadId, MultipartUpload: { Parts: parts } }));
+      }
       const head = await s3.send(new S3.HeadObjectCommand({ Bucket: BUCKET, Key: p.key }));
       const size = Number(head.ContentLength) || 0;
-      if (usedBytes(req.user.id) + size > quotaFor(req.user)) {
+      if (size > p.size || usedBytes(req.user.id) + size > quotaFor(req.user)) {
         await s3.send(new S3.DeleteObjectCommand({ Bucket: BUCKET, Key: p.key })).catch(() => {});
         continue;
       }

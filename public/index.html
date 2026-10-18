@@ -602,51 +602,82 @@ async function uploadDirect(list) {
 }
 async function uploadDirectInner(list) {
   const total = list.reduce((s, f) => s + f.size, 0) || 1;
-  let done = 0, count = 0;
-  toast('Preparando envio…', 0);
-  try {
-    for (let i = 0; i < list.length; i += 20) {
-      const batch = list.slice(i, i + 20);
-      const slots = await api('/api/upload/start', { method: 'POST', body: JSON.stringify({
-        files: batch.map(f => ({ name: f.name, size: f.size, type: f.type || 'application/octet-stream' })) }) });
-      const okIds = [];
+  const loaded = new Map(); // quanto já subiu de cada envio
+  let doneCount = 0, savedCount = 0, failed = [];
+  const progress = () => {
+    let sum = 0; loaded.forEach(v => sum += v);
+    toast(`Enviando… ${doneCount} de ${list.length} prontos. Não feche esta tela`, Math.min(100, Math.round(sum / total * 100)));
+  };
+  // envia um pedido com nova tentativa automática (até 3 vezes)
+  async function send(method, url, body, key, getEtag) {
+    for (let tent = 1; ; tent++) {
       try {
-        for (let j = 0; j < batch.length; j++) {
-          const f = batch[j], slot = slots[j];
-          // até 3 tentativas por arquivo, caso a internet oscile
-          for (let tent = 1; ; tent++) {
-           try {
-          await new Promise((resolve, reject) => {
-            const fd = new FormData();
-            Object.entries(slot.fields).forEach(([k, v]) => fd.append(k, v));
-            fd.append('file', f);
-            const x = new XMLHttpRequest();
-            x.open('POST', slot.url);
-            x.upload.onprogress = ev => toast(`Enviando ${i + j + 1} de ${list.length}… não feche esta tela`, Math.round((done + ev.loaded) / total * 100));
-            x.onload = () => x.status < 300 ? resolve() : reject(new Error(`Não consegui enviar ${f.name}. Tente de novo.`));
-            x.onerror = () => reject(new Error('A conexão caiu. Tente enviar de novo.'));
-            x.send(fd);
-          });
-           break;
-           } catch (e) {
-            if (tent >= 3) throw e;
-            toast(`A conexão oscilou. Tentando de novo (${tent + 1}ª tentativa)…`);
-            await new Promise(r => setTimeout(r, 2500 * tent));
-           }
-          }
-          done += f.size; okIds.push(slot.id);
-        }
-      } finally {
-        if (okIds.length) {
-          const recs = await api('/api/upload/finish', { method: 'POST', body: JSON.stringify({ ids: okIds }) });
-          files = [...recs, ...files]; count += recs.length; render();
-        }
+        return await new Promise((resolve, reject) => {
+          const x = new XMLHttpRequest();
+          x.open(method, url);
+          x.upload.onprogress = ev => { loaded.set(key, ev.loaded); progress(); };
+          x.onload = () => {
+            if (x.status >= 300) return reject(new Error('falha'));
+            const etag = getEtag ? x.getResponseHeader('ETag') : true;
+            etag ? resolve(etag) : reject(new Error('sem etag'));
+          };
+          x.onerror = () => reject(new Error('rede'));
+          x.send(body);
+        });
+      } catch (e) {
+        loaded.set(key, 0);
+        if (tent >= 3) throw e;
+        await new Promise(r => setTimeout(r, 2000 * tent));
       }
     }
-    toast(`Pronto! ${count} arquivo(s) guardado(s) no Lumi.`); hideToast();
-  } catch (err) {
-    toast(count ? `${count} arquivo(s) guardado(s). ${err.message}` : err.message); hideToast(5000);
   }
+  async function uploadOne(f, slot) {
+    if (slot.multipart) {
+      const n = slot.urls.length, parts = new Array(n);
+      let next = 0;
+      const worker = async () => {
+        while (next < n) {
+          const i = next++;
+          const blob = f.slice(i * slot.partSize, Math.min(f.size, (i + 1) * slot.partSize));
+          parts[i] = { n: i + 1, etag: await send('PUT', slot.urls[i], blob, slot.id + ':' + i, true) };
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, n) }, worker));
+      return { id: slot.id, parts };
+    }
+    const fd = new FormData();
+    Object.entries(slot.fields).forEach(([k, v]) => fd.append(k, v));
+    fd.append('file', f);
+    await send('POST', slot.url, fd, slot.id, false);
+    return { id: slot.id };
+  }
+
+  toast('Preparando envio…', 0);
+  for (let i = 0; i < list.length; i += 20) {
+    const batch = list.slice(i, i + 20);
+    let slots;
+    try {
+      slots = await api('/api/upload/start', { method: 'POST', body: JSON.stringify({
+        files: batch.map(f => ({ name: f.name, size: f.size, type: f.type || 'application/octet-stream' })) }) });
+    } catch (err) { toast(err.message); hideToast(5000); refreshMe(); return; }
+    // 3 arquivos subindo ao mesmo tempo
+    let next = 0;
+    const worker = async () => {
+      while (next < batch.length) {
+        const j = next++, f = batch[j], slot = slots[j];
+        try {
+          const item = await uploadOne(f, slot);
+          const recs = await api('/api/upload/finish', { method: 'POST', body: JSON.stringify({ items: [item] }) });
+          files = [...recs, ...files]; savedCount += recs.length; render();
+        } catch { failed.push(f.name); }
+        doneCount++; progress();
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(3, batch.length) }, worker));
+  }
+  if (failed.length) toast(`${savedCount} guardado(s). Não consegui enviar: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '…' : ''}. Tente esses de novo.`);
+  else toast(`Pronto! ${savedCount} arquivo(s) guardado(s) no Lumi.`);
+  hideToast(failed.length ? 7000 : 2500);
   refreshMe();
 }
 
