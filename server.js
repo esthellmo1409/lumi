@@ -14,7 +14,12 @@ const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_DIR |
 const FILES_DIR = path.join(DATA_DIR, 'files');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const JWT_SECRET = process.env.JWT_SECRET || 'troque-este-segredo-no-railway';
-const QUOTA_BYTES = Number(process.env.QUOTA_MB || 5120) * 1024 * 1024; // 5 GB por pessoa
+const QUOTA_BYTES = Number(process.env.QUOTA_MB || 5120) * 1024 * 1024; // cota padrão por pessoa
+// Cotas especiais: QUOTA_OVERRIDES="email1@x.com:256, email2@y.com:50" (valores em GB)
+const QUOTA_OVERRIDES = new Map(String(process.env.QUOTA_OVERRIDES || '').split(',')
+  .map(p => p.trim().split(':')).filter(([e, g]) => e && Number(g) > 0)
+  .map(([e, g]) => [e.trim().toLowerCase(), Number(g) * 1024 ** 3]));
+const quotaFor = user => QUOTA_OVERRIDES.get(user.email) || QUOTA_BYTES;
 const MAX_FILE_BYTES = Number(process.env.MAX_FILE_MB || 2048) * 1024 * 1024; // 2 GB por arquivo
 const ALLOW_SIGNUP = process.env.ALLOW_SIGNUP !== 'false';
 
@@ -288,7 +293,7 @@ app.post('/api/logout-all', auth, (req, res) => {
 });
 
 app.get('/api/me', auth, (req, res) => {
-  res.json({ name: req.user.name, email: req.user.email, used: usedBytes(req.user.id), quota: QUOTA_BYTES });
+  res.json({ name: req.user.name, email: req.user.email, used: usedBytes(req.user.id), quota: quotaFor(req.user) });
 });
 
 // ---------- Arquivos ----------
@@ -316,7 +321,7 @@ app.get('/api/files', auth, (req, res) => {
 app.post('/api/upload', auth, upload.array('files', 50), (req, res) => {
   const incoming = req.files || [];
   const total = incoming.reduce((s, f) => s + f.size, 0);
-  if (usedBytes(req.user.id) + total > QUOTA_BYTES) {
+  if (usedBytes(req.user.id) + total > quotaFor(req.user)) {
     incoming.forEach(f => fs.unlink(f.path, () => {}));
     return res.status(413).json({ error: 'Seu espaço acabou. Apague alguns arquivos para enviar mais.' });
   }
@@ -403,7 +408,7 @@ app.post('/api/upload/start', auth, async (req, res) => {
   if (!list.length) return res.status(400).json({ error: 'Nenhum arquivo escolhido.' });
   const total = list.reduce((s, f) => s + Math.max(0, Number(f.size) || 0), 0);
   if (list.some(f => Number(f.size) > MAX_FILE_BYTES)) return res.status(413).json({ error: `Cada arquivo pode ter no máximo ${Math.round(MAX_FILE_BYTES / 1024 ** 3)} GB.` });
-  if (usedBytes(req.user.id) + total > QUOTA_BYTES) return res.status(413).json({ error: 'Seu espaço acabou. Apague alguns arquivos para enviar mais.' });
+  if (usedBytes(req.user.id) + total > quotaFor(req.user)) return res.status(413).json({ error: 'Seu espaço acabou. Apague alguns arquivos para enviar mais.' });
   try {
     const out = [];
     for (const f of list) {
@@ -431,7 +436,7 @@ app.post('/api/upload/finish', auth, async (req, res) => {
     try {
       const head = await s3.send(new S3.HeadObjectCommand({ Bucket: BUCKET, Key: p.key }));
       const size = Number(head.ContentLength) || 0;
-      if (usedBytes(req.user.id) + size > QUOTA_BYTES) {
+      if (usedBytes(req.user.id) + size > quotaFor(req.user)) {
         await s3.send(new S3.DeleteObjectCommand({ Bucket: BUCKET, Key: p.key })).catch(() => {});
         continue;
       }
