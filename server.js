@@ -281,6 +281,45 @@ app.post('/api/reset', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- Código de recuperação (funciona sem e-mail) ----------
+const REC_ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem letras e números que se confundem
+function newRecoveryCode() {
+  let c = '';
+  for (let i = 0; i < 12; i++) c += REC_ALPHA[crypto.randomInt(0, REC_ALPHA.length)];
+  return c.match(/.{4}/g).join('-');
+}
+const cleanRec = c => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+async function issueRecovery(user) {
+  const code = newRecoveryCode();
+  user.recHash = await bcrypt.hash(cleanRec(code), 10);
+  user.recAt = Date.now(); saveDb();
+  return code;
+}
+
+// primeira vez (conta ainda sem código) não pede senha; para gerar outro, pede a senha atual
+app.post('/api/recovery/new', auth, async (req, res) => {
+  if (req.user.recHash) {
+    if (tooMany('pw:' + req.user.id)) return res.status(429).json({ error: 'Muitas tentativas. Espere alguns minutos.' });
+    if (!(await bcrypt.compare(String(req.body.password || ''), req.user.hash))) return res.status(401).json({ error: 'Senha incorreta.' });
+  }
+  res.json({ code: await issueRecovery(req.user) });
+});
+
+app.post('/api/recover', async (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  if (tooMany('rec:' + req.ip + email, 6) || tooMany('ip:' + req.ip)) return res.status(429).json({ error: 'Muitas tentativas. Espere 15 minutos e tente de novo.' });
+  const weak = weakPassword(String(req.body.password || ''));
+  if (weak) return res.status(400).json({ error: weak });
+  const user = db.users.find(u => u.email === email);
+  const ok = user && user.recHash && await bcrypt.compare(cleanRec(req.body.code), user.recHash);
+  if (!ok) return res.status(401).json({ error: 'E-mail ou código de recuperação incorretos.' });
+  user.hash = await bcrypt.hash(String(req.body.password), 12);
+  user.tv = (user.tv || 0) + 1; user.devices = []; user.verified = true;
+  const code = await issueRecovery(user); // o código usado deixa de valer
+  trustDevice(req, res, user); saveDb(); setSession(res, user);
+  res.json({ ok: true, code });
+});
+
 app.post('/api/logout', (req, res) => { res.clearCookie('lumi'); res.json({ ok: true }); });
 
 app.post('/api/password', auth, async (req, res) => {
@@ -378,7 +417,7 @@ app.post('/api/mp/webhook', async (req, res) => {
 });
 
 app.get('/api/me', auth, (req, res) => {
-  res.json({ name: req.user.name, email: req.user.email, used: usedBytes(req.user.id), quota: quotaFor(req.user) });
+  res.json({ name: req.user.name, email: req.user.email, used: usedBytes(req.user.id), quota: quotaFor(req.user), needRecovery: !req.user.recHash });
 });
 
 // ---------- Arquivos ----------

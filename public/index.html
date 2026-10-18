@@ -76,6 +76,11 @@ input{font:inherit}
 .trashbar button{flex:none;padding:9px 12px;border-radius:10px;background:var(--danger);color:#fff;font-weight:700;font-size:13px}
 .tile .left{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.55);font-size:11px;padding:3px 6px;border-radius:6px}
 .chip.trash.on{background:var(--danger);border-color:var(--danger);color:#fff}
+.reccode{font-family:"Bricolage Grotesque",Inter,sans-serif;font-size:28px;font-weight:800;letter-spacing:3px;text-align:center;background:var(--card);border:1px dashed var(--accent);color:var(--accent);border-radius:14px;padding:18px 10px;margin:4px 0 12px;user-select:all;-webkit-user-select:all}
+.check{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--ink);margin:12px 0 14px;line-height:1.4}
+.check input{width:20px;height:20px;flex:none;margin:0;accent-color:var(--accent)}
+.btn:disabled{opacity:.45}
+.ghost{width:100%;padding:13px;border-radius:14px;border:1px solid var(--line);font-weight:600;margin-top:4px}
 .err{color:var(--danger);font-size:14px;min-height:20px;margin:4px 0 10px}
 
 /* ---------- Painel ---------- */
@@ -170,6 +175,16 @@ input{font:inherit}
     <button class="btn" id="codeBtn">Confirmar código</button>
     <button type="button" class="linkbtn" id="resendBtn">Reenviar código</button>
     <button type="button" class="linkbtn" id="codeBack" style="color:var(--soft)">Voltar</button>
+  </form>
+
+  <form id="recoverForm" class="hidden">
+    <label class="field"><input id="rEmail" type="email" placeholder="E-mail da sua conta" autocomplete="email" required></label>
+    <label class="field"><input id="rCode" placeholder="Código de recuperação (ex: K7PM-Q2XR-9HTW)" autocomplete="off" autocapitalize="characters" spellcheck="false" required></label>
+    <label class="field pw"><input id="rPass" type="password" placeholder="Nova senha (8+ caracteres, letras e números)" autocomplete="new-password" required></label>
+    <div class="err" id="recoverErr"></div>
+    <button class="btn" id="recoverBtn">Criar nova senha</button>
+    <button type="button" class="linkbtn hidden" id="recoverByEmail">Receber um código por e-mail</button>
+    <button type="button" class="linkbtn" id="recoverBack" style="color:var(--soft)">Voltar para o login</button>
   </form>
 
   <form id="forgotForm" class="hidden">
@@ -269,6 +284,7 @@ input{font:inherit}
     <p id="mEmail"></p>
     <button class="item" id="mInstall">Colocar Lumi na tela de início</button>
     <button class="item" id="mPass">Trocar senha</button>
+    <button class="item" id="mRec">Código de recuperação</button>
     <button class="item" id="mAll">Sair de todos os aparelhos</button>
     <button class="item" id="mLogout" style="color:var(--danger)">Sair da conta</button>
   </div>
@@ -283,6 +299,27 @@ input{font:inherit}
     <div class="err" id="planErr"></div>
     <button class="btn" id="planBtn">Continuar para o pagamento</button>
   </div>
+</div>
+
+<div class="menu hidden" id="recSheet">
+  <div class="sheet">
+    <h3>Seu código de recuperação</h3>
+    <p>Se um dia você esquecer a senha, é com este código que você volta a entrar sem perder nenhum arquivo. Tire um print ou guarde no app Notas. Ele só aparece agora.</p>
+    <div class="reccode" id="recCode">----</div>
+    <button type="button" class="ghost" id="recCopy">Copiar código</button>
+    <label class="check"><input type="checkbox" id="recOk"> Já guardei meu código em um lugar seguro</label>
+    <button class="btn" id="recDone" disabled>Continuar</button>
+  </div>
+</div>
+
+<div class="menu hidden" id="recNewSheet">
+  <form class="sheet" id="recNewForm">
+    <h3>Novo código de recuperação</h3>
+    <p>O código antigo deixa de funcionar. Confirme sua senha para gerar outro.</p>
+    <label class="field pw"><input id="recNewPass" type="password" placeholder="Sua senha" autocomplete="current-password" required></label>
+    <div class="err" id="recNewErr"></div>
+    <button class="btn" id="recNewBtn">Gerar novo código</button>
+  </form>
 </div>
 
 <div class="menu hidden" id="passSheet">
@@ -313,10 +350,10 @@ let files = [], filter = 'all', query = '', selecting = false, selected = new Se
 
 // ---------- Entrada ----------
 let mode = 'register', emailOn = false, ticket = null;
-const screens = ['#authForm', '#authSwitch', '#forgotLink', '#codeForm', '#forgotForm'];
+const screens = ['#authForm', '#authSwitch', '#forgotLink', '#codeForm', '#forgotForm', '#recoverForm'];
 function setMode(m) {
   mode = m;
-  screens.forEach(sel => $(sel).classList.toggle('hidden', sel === '#codeForm' || sel === '#forgotForm' || (sel === '#forgotLink' && !(m === 'login' && emailOn))));
+  screens.forEach(sel => $(sel).classList.toggle('hidden', sel === '#codeForm' || sel === '#forgotForm' || sel === '#recoverForm' || (sel === '#forgotLink' && m !== 'login')));
   $('#authLead').textContent = 'Guarde fotos, vídeos e documentos na sua nuvem e libere espaço no celular sem perder nada.';
   $('#nameField').classList.toggle('hidden', m === 'login');
   $('#authBtn').textContent = m === 'login' ? 'Entrar' : 'Criar minha conta';
@@ -366,6 +403,27 @@ $('#codeBack').onclick = () => setMode(mode);
 
 // Esqueci minha senha
 $('#forgotLink').onclick = () => {
+  $('#recoverForm').reset(); $('#recoverErr').textContent = '';
+  $('#rEmail').value = (document.querySelector('#authForm [name=email]').value || '');
+  $('#recoverByEmail').classList.toggle('hidden', !emailOn);
+  screen(['#recoverForm'], 'Vamos criar uma <em>senha nova.</em>', 'Use o código de recuperação que você guardou quando criou a conta.');
+};
+$('#recoverBack').onclick = () => setMode('login');
+$('#recoverByEmail').onclick = () => openForgotEmail();
+$('#rCode').oninput = e => {
+  const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+  e.target.value = v.match(/.{1,4}/g)?.join('-') || '';
+};
+$('#recoverForm').onsubmit = async e => {
+  e.preventDefault(); $('#recoverBtn').disabled = true; $('#recoverErr').textContent = '';
+  try {
+    const r = await api('/api/recover', { method: 'POST', body: JSON.stringify({ email: $('#rEmail').value, code: $('#rCode').value, password: $('#rPass').value }) });
+    await boot(true);
+    showRecovery(r.code);
+  } catch (err) { $('#recoverErr').textContent = err.message; }
+  $('#recoverBtn').disabled = false;
+};
+function openForgotEmail() {
   $('#forgotForm').reset(); $('#forgotErr').textContent = ''; ticket = null;
   $('#forgotStep1').classList.remove('hidden'); $('#forgotStep2').classList.add('hidden');
   $('#fEmail').required = true; $('#fCode').required = false; $('#fPass').required = false;
@@ -393,7 +451,27 @@ $('#forgotForm').onsubmit = async e => {
 $('#fCode').oninput = e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6); };
 
 // ---------- Painel ----------
-async function boot() {
+function showRecovery(code) {
+  $('#recCode').textContent = code; $('#recOk').checked = false; $('#recDone').disabled = true;
+  $('#recSheet').classList.remove('hidden');
+}
+$('#recOk').onchange = e => { $('#recDone').disabled = !e.target.checked; };
+$('#recDone').onclick = () => $('#recSheet').classList.add('hidden');
+$('#recCopy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('#recCode').textContent); $('#recCopy').textContent = 'Copiado'; }
+  catch { const r = document.createRange(); r.selectNodeContents($('#recCode')); getSelection().removeAllRanges(); getSelection().addRange(r); }
+  setTimeout(() => $('#recCopy').textContent = 'Copiar código', 2000);
+};
+$('#mRec').onclick = () => { $('#menu').classList.add('hidden'); $('#recNewForm').reset(); $('#recNewErr').textContent = ''; $('#recNewSheet').classList.remove('hidden'); };
+$('#recNewSheet').onclick = e => { if (e.target.id === 'recNewSheet') $('#recNewSheet').classList.add('hidden'); };
+$('#recNewForm').onsubmit = async e => {
+  e.preventDefault(); $('#recNewBtn').disabled = true;
+  try { const r = await api('/api/recovery/new', { method: 'POST', body: JSON.stringify({ password: $('#recNewPass').value }) }); $('#recNewSheet').classList.add('hidden'); showRecovery(r.code); }
+  catch (err) { $('#recNewErr').textContent = err.message; }
+  $('#recNewBtn').disabled = false;
+};
+
+async function boot(skipRecovery) {
   try { me = await api('/api/me'); } catch { $('#authView').classList.remove('hidden'); $('#appView').classList.add('hidden'); return; }
   $('#authView').classList.add('hidden'); $('#appView').classList.remove('hidden');
   $('#avatarBtn').textContent = me.name[0].toUpperCase();
@@ -401,6 +479,10 @@ async function boot() {
   $('#mName').textContent = me.name; $('#mEmail').textContent = me.email;
   files = await api('/api/files');
   render();
+  // conta sem código de recuperação: gera e mostra uma vez
+  if (me.needRecovery && !skipRecovery) {
+    try { const r = await api('/api/recovery/new', { method: 'POST', body: '{}' }); showRecovery(r.code); } catch {}
+  }
 }
 async function refreshMe() { me = await api('/api/me'); renderMeter(); }
 function renderMeter() {
