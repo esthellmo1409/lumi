@@ -13,7 +13,11 @@ const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH || process.env.DATA_DIR || path.join(__dirname, 'data');
 const FILES_DIR = path.join(DATA_DIR, 'files');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
-const JWT_SECRET = process.env.JWT_SECRET || 'troque-este-segredo-no-railway';
+fs.mkdirSync(DATA_DIR, { recursive: true });
+// Senha secreta dos logins: gerada pelo próprio servidor e guardada só no volume
+const SECRET_FILE = path.join(DATA_DIR, '.jwt-secret');
+if (!fs.existsSync(SECRET_FILE)) fs.writeFileSync(SECRET_FILE, crypto.randomBytes(48).toString('hex'), { mode: 0o600 });
+const JWT_SECRET = fs.readFileSync(SECRET_FILE, 'utf8').trim();
 const QUOTA_BYTES = Number(process.env.QUOTA_MB || 5120) * 1024 * 1024; // cota padrão por pessoa
 // Cotas especiais: QUOTA_OVERRIDES="email1@x.com:256, email2@y.com:50" (valores em GB)
 const QUOTA_OVERRIDES = new Map(String(process.env.QUOTA_OVERRIDES || '').split(',')
@@ -22,23 +26,29 @@ const QUOTA_OVERRIDES = new Map(String(process.env.QUOTA_OVERRIDES || '').split(
 const MAX_FILE_BYTES = Number(process.env.MAX_FILE_MB || 2048) * 1024 * 1024; // 2 GB por arquivo
 const ALLOW_SIGNUP = process.env.ALLOW_SIGNUP !== 'false';
 
-if (JWT_SECRET === 'troque-este-segredo-no-railway') {
-  console.warn('[aviso] Defina a variável JWT_SECRET no Railway.');
-}
 
 fs.mkdirSync(FILES_DIR, { recursive: true });
 
 // ---------- Banco de dados simples em JSON ----------
 let db = { users: [], files: [] };
-if (fs.existsSync(DB_FILE)) {
-  try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) { console.error('db.json inválido', e); }
+let dbLoaded = false; // false = não achamos dados válidos no volume
+for (const f of [DB_FILE, DB_FILE + '.bak']) {
+  if (!fs.existsSync(f)) continue;
+  try { db = JSON.parse(fs.readFileSync(f, 'utf8')); dbLoaded = true; if (f !== DB_FILE) console.warn('[dados] db.json com problema, usei a cópia .bak'); break; }
+  catch (e) { console.error('[dados] arquivo inválido:', f); }
 }
-let saveTimer = null;
+function normalizeDb() {
+  db.users = db.users || []; db.files = db.files || []; db.erased = db.erased || [];
+  }
+normalizeDb();
+let saveTimer = null, dirty = false;
 function saveDb() {
+  dirty = true;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     const tmp = DB_FILE + '.tmp';
     fs.writeFileSync(tmp, JSON.stringify(db));
+    if (fs.existsSync(DB_FILE)) fs.copyFileSync(DB_FILE, DB_FILE + '.bak'); // cópia da versão anterior
     fs.renameSync(tmp, DB_FILE);
   }, 100);
 }
@@ -492,7 +502,8 @@ app.post('/api/upload/start', auth, async (req, res) => {
       const mime = String(f.type || 'application/octet-stream').slice(0, 100);
       const { url, fields } = await createPresignedPost(s3, {
         Bucket: BUCKET, Key: key, Expires: 3 * 3600,
-        Fields: { 'Content-Type': mime },
+        // dados do dono gravados junto do arquivo, como garantia extra
+        Fields: { 'Content-Type': mime, 'x-amz-meta-uid': req.user.id, 'x-amz-meta-name': encodeURIComponent(String(f.name || 'arquivo').slice(0, 200)) },
         Conditions: [['eq', '$key', key], ['eq', '$Content-Type', mime], ['content-length-range', 0, size]],
       });
       pending.set(fid, { userId: req.user.id, key, name: String(f.name || 'arquivo').slice(0, 200), size, mime, exp: Date.now() + 3 * 3600 * 1000 });
@@ -568,11 +579,24 @@ app.patch('/api/files/:id', auth, (req, res) => {
 
 // ---------- Lixeira ----------
 const TRASH_DAYS = 30;
+// Mesmo depois de "apagar de vez", o arquivo fica guardado mais 7 dias no armazenamento.
+// Assim, se alguém apagar sem querer ou houver qualquer erro, ainda dá para recuperar pelo suporte.
+const SAFETY_DAYS = 7;
 function eraseFile(f) {
   db.files = db.files.filter(x => x !== f);
-  if (f.storage === 's3') s3.send(new S3.DeleteObjectCommand({ Bucket: BUCKET, Key: f.key })).catch(e => console.error('[arquivos] falha ao apagar', f.id, e.message));
+  if (f.storage === 's3') db.erased.push({ ...f, erasedAt: Date.now() });
   else fs.unlink(path.join(FILES_DIR, f.id), () => {});
 }
+setInterval(async () => {
+  if (!S3_ON) return;
+  const limit = Date.now() - SAFETY_DAYS * 24 * 3600 * 1000;
+  const old = db.erased.filter(e => e.erasedAt < limit);
+  for (const e of old) {
+    try { await s3.send(new S3.DeleteObjectCommand({ Bucket: BUCKET, Key: e.key })); db.erased = db.erased.filter(x => x !== e); }
+    catch (err) { console.error('[arquivos] falha ao remover', e.id, err.message); }
+  }
+  if (old.length) saveDb();
+}, 6 * 60 * 60 * 1000);
 
 // Apagar: primeiro vai para a lixeira; com ?forever=1 (ou se já estiver na lixeira) apaga de vez
 app.delete('/api/files/:id', auth, (req, res) => {
@@ -609,4 +633,42 @@ app.use((err, req, res, next) => {
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-app.listen(PORT, () => { console.log(`Lumi rodando na porta ${PORT} | dados em ${DATA_DIR}`); setupBucket(); });
+// ---------- Backup automático dos dados ----------
+const KEEP_BACKUPS = 60;
+async function listBackups() {
+  const out = []; let token;
+  do {
+    const r = await s3.send(new S3.ListObjectsV2Command({ Bucket: BUCKET, Prefix: 'backups/', ContinuationToken: token }));
+    (r.Contents || []).forEach(o => out.push(o.Key)); token = r.IsTruncated ? r.NextContinuationToken : null;
+  } while (token);
+  return out.sort();
+}
+async function backupDb(reason) {
+  if (!S3_ON) return;
+  try {
+    const key = `backups/db-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    await s3.send(new S3.PutObjectCommand({ Bucket: BUCKET, Key: key, Body: JSON.stringify(db), ContentType: 'application/json' }));
+    dirty = false;
+    const all = await listBackups();
+    for (const k of all.slice(0, Math.max(0, all.length - KEEP_BACKUPS))) await s3.send(new S3.DeleteObjectCommand({ Bucket: BUCKET, Key: k }));
+    console.log('[backup] cópia salva:', key, `(${reason})`);
+  } catch (e) { console.error('[backup] falhou:', e.name, e.message); }
+}
+async function restoreFromBucket() {
+  try {
+    const all = await listBackups();
+    if (!all.length) { console.log('[backup] nenhum backup encontrado, começando do zero'); return; }
+    const latest = all[all.length - 1];
+    const r = await s3.send(new S3.GetObjectCommand({ Bucket: BUCKET, Key: latest }));
+    db = JSON.parse(await r.Body.transformToString()); normalizeDb(); saveDb();
+    console.warn('[backup] DADOS RESTAURADOS do backup', latest);
+  } catch (e) { console.error('[backup] não consegui restaurar:', e.name, e.message); }
+}
+
+(async () => {
+  if (!dbLoaded && S3_ON) await restoreFromBucket();
+  app.listen(PORT, () => { console.log(`Lumi rodando na porta ${PORT} | dados em ${DATA_DIR}`); setupBucket(); });
+  setTimeout(() => backupDb('início'), 60 * 1000);
+  setInterval(() => backupDb('a cada 6 horas'), 6 * 60 * 60 * 1000);
+  setInterval(() => { if (dirty) backupDb('alterações recentes'); }, 30 * 60 * 1000);
+})();

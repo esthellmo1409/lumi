@@ -512,7 +512,13 @@ function toast(txt, progress) {
 }
 const hideToast = (ms = 2500) => setTimeout(() => $('#toast').classList.add('hidden'), ms);
 // Envio direto do iPhone para o armazenamento, um arquivo de cada vez
+let uploading = false;
+window.addEventListener('beforeunload', e => { if (uploading) { e.preventDefault(); e.returnValue = ''; } });
 async function uploadDirect(list) {
+  uploading = true;
+  try { return await uploadDirectInner(list); } finally { uploading = false; }
+}
+async function uploadDirectInner(list) {
   const total = list.reduce((s, f) => s + f.size, 0) || 1;
   let done = 0, count = 0;
   toast('Preparando envio…', 0);
@@ -525,6 +531,9 @@ async function uploadDirect(list) {
       try {
         for (let j = 0; j < batch.length; j++) {
           const f = batch[j], slot = slots[j];
+          // até 3 tentativas por arquivo, caso a internet oscile
+          for (let tent = 1; ; tent++) {
+           try {
           await new Promise((resolve, reject) => {
             const fd = new FormData();
             Object.entries(slot.fields).forEach(([k, v]) => fd.append(k, v));
@@ -536,6 +545,13 @@ async function uploadDirect(list) {
             x.onerror = () => reject(new Error('A conexão caiu. Tente enviar de novo.'));
             x.send(fd);
           });
+           break;
+           } catch (e) {
+            if (tent >= 3) throw e;
+            toast(`A conexão oscilou. Tentando de novo (${tent + 1}ª tentativa)…`);
+            await new Promise(r => setTimeout(r, 2500 * tent));
+           }
+          }
           done += f.size; okIds.push(slot.id);
         }
       } finally {
