@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lumi — seu espaço na nuvem</title>
+<meta name="theme-color" content="#0f1630">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Lumi">
+<link rel="apple-touch-icon" href="/icon-512.png">
+<link rel="manifest" href="/manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0f1630; --bg2:#161f42; --card:#1b2550; --line:#2a3670;
+  --ink:#f3f1ea; --soft:#a9b0d3; --accent:#ffb36b; --accent2:#7cc4ff; --danger:#ff6b81;
+  --r:18px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif;min-height:100%}
+body{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+h1,h2,.brand{font-family:"Bricolage Grotesque",Inter,sans-serif;letter-spacing:-.02em}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+input{font:inherit}
+.hidden{display:none!important}
+
+/* ---------- Tela de entrada ---------- */
+.auth{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:32px 22px;max-width:440px;margin:0 auto;position:relative}
+.sky{position:fixed;inset:0;z-index:-1;overflow:hidden;background:
+  radial-gradient(900px 500px at 80% -10%,#3a2f6b 0,transparent 60%),
+  radial-gradient(700px 400px at -10% 110%,#16406b 0,transparent 60%),var(--bg)}
+.sky span{position:absolute;width:2px;height:2px;background:#fff;border-radius:50%;opacity:.5}
+.logo{display:flex;align-items:center;gap:12px;margin-bottom:28px}
+.logo svg{width:48px;height:48px}
+.brand{font-size:34px;font-weight:800}
+.auth h1{font-size:40px;line-height:1.02;margin:0 0 12px;font-weight:800}
+.auth h1 em{font-style:normal;color:var(--accent)}
+.auth p.lead{color:var(--soft);margin:0 0 28px;font-size:16px;line-height:1.5}
+.field{display:block;margin-bottom:12px}
+.field input{width:100%;padding:16px;border-radius:14px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--ink);font-size:16px;outline:none}
+.field input:focus{border-color:var(--accent2)}
+.btn{width:100%;padding:16px;border-radius:14px;background:var(--accent);color:#24140a;font-weight:700;font-size:16px}
+.btn:active{transform:scale(.98)}
+.switch{margin-top:18px;text-align:center;color:var(--soft);font-size:15px}
+.switch button{color:var(--accent2);font-weight:600}
+.err{color:var(--danger);font-size:14px;min-height:20px;margin:4px 0 10px}
+
+/* ---------- Painel ---------- */
+.app{max-width:960px;margin:0 auto;padding:16px 16px 120px}
+.top{display:flex;align-items:center;justify-content:space-between;padding:6px 0 18px}
+.top .logo{margin:0}
+.top .logo svg{width:34px;height:34px}
+.top .brand{font-size:26px}
+.avatar{width:38px;height:38px;border-radius:50%;background:var(--card);border:1px solid var(--line);font-weight:700;display:grid;place-items:center}
+
+.meter{background:linear-gradient(135deg,#232e63,#1a2350);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-bottom:18px}
+.meter .row{display:flex;justify-content:space-between;align-items:baseline}
+.meter b{font-family:"Bricolage Grotesque";font-size:26px}
+.meter small{color:var(--soft)}
+.bar{height:10px;background:#0c1229;border-radius:99px;overflow:hidden;margin-top:12px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:99px;transition:width .4s}
+.meter .tip{margin-top:10px;font-size:13px;color:var(--soft)}
+
+.tools{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px;scrollbar-width:none}
+.chip{padding:9px 14px;border-radius:99px;border:1px solid var(--line);color:var(--soft);white-space:nowrap;font-size:14px}
+.chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:600}
+.search{width:100%;padding:13px 16px;border-radius:14px;border:1px solid var(--line);background:var(--bg2);color:var(--ink);margin-bottom:12px;outline:none;font-size:16px}
+
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+@media(min-width:640px){.grid{grid-template-columns:repeat(5,1fr);gap:8px}}
+.tile{position:relative;aspect-ratio:1;background:var(--card);border-radius:10px;overflow:hidden}
+.tile img,.tile video{width:100%;height:100%;object-fit:cover;display:block}
+.tile .ic{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:8px;font-size:12px;color:var(--soft)}
+.tile .ic strong{display:block;font-size:22px;color:var(--accent2);margin-bottom:6px;font-family:"Bricolage Grotesque"}
+.tile .badge{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.55);font-size:11px;padding:3px 6px;border-radius:6px}
+.tile .star{position:absolute;left:6px;top:6px;color:var(--accent);font-size:14px}
+.tile.sel{outline:3px solid var(--accent);outline-offset:-3px}
+.tile.sel::after{content:"✓";position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#24140a;font-weight:800;display:grid;place-items:center;font-size:13px}
+.empty{text-align:center;padding:60px 20px;color:var(--soft)}
+.empty h2{color:var(--ink);font-size:24px;margin:14px 0 8px}
+
+/* botão flutuante */
+.fab{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(22px + env(safe-area-inset-bottom));background:var(--accent);color:#24140a;padding:16px 26px;border-radius:99px;font-weight:700;box-shadow:0 10px 30px rgba(255,179,107,.35);display:flex;gap:8px;align-items:center;z-index:5}
+.selbar{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px;display:flex;gap:8px;align-items:center;z-index:6;max-width:600px;margin:0 auto}
+.selbar span{flex:1;padding-left:6px}
+.selbar button{padding:10px 14px;border-radius:12px;background:var(--bg2);font-weight:600;font-size:14px}
+.selbar .del{background:var(--danger);color:#fff}
+
+/* upload */
+.toast{position:fixed;top:calc(12px + env(safe-area-inset-top));left:12px;right:12px;max-width:480px;margin:0 auto;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;z-index:20;box-shadow:0 10px 40px rgba(0,0,0,.4)}
+.toast .bar{margin-top:8px}
+
+/* visualizador */
+.viewer{position:fixed;inset:0;background:rgba(5,8,20,.96);z-index:30;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+.viewer header{display:flex;align-items:center;gap:10px;padding:12px 14px}
+.viewer header .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.viewer .stage{flex:1;display:grid;place-items:center;overflow:hidden;padding:8px}
+.viewer .stage img,.viewer .stage video{max-width:100%;max-height:100%;border-radius:8px}
+.viewer .stage iframe{width:100%;height:100%;border:0;background:#fff;border-radius:8px}
+.viewer footer{display:flex;justify-content:space-around;padding:12px}
+.viewer footer button,.viewer footer a{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;color:var(--soft);text-decoration:none}
+.viewer footer svg{width:24px;height:24px;stroke:var(--ink)}
+.round{width:38px;height:38px;border-radius:50%;background:var(--bg2);display:grid;place-items:center;font-size:18px}
+
+.menu{position:fixed;inset:0;z-index:25;background:rgba(0,0,0,.5);display:flex;align-items:flex-end}
+.sheet{background:var(--bg2);width:100%;max-width:520px;margin:0 auto;border-radius:22px 22px 0 0;padding:20px 20px calc(24px + env(safe-area-inset-bottom))}
+.sheet h3{margin:0 0 4px}
+.sheet p{color:var(--soft);margin:0 0 18px;font-size:14px}
+.sheet button.item{display:block;width:100%;text-align:left;padding:15px 4px;border-top:1px solid var(--line);font-size:16px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#7cc4ff"/><stop offset="1" stop-color="#ffb36b"/></linearGradient></defs></svg>
+<div class="sky" id="sky"></div>
+
+<!-- ENTRADA -->
+<section class="auth hidden" id="authView">
+  <div class="logo">
+    <svg viewBox="0 0 48 48"><path d="M14 36a9 9 0 0 1-1.2-17.9A12 12 0 0 1 36 16.5 8 8 0 0 1 35 36Z" fill="url(#g)"/><path d="M24 31V21m0 0-4.5 4.5M24 21l4.5 4.5" stroke="#0f1630" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="brand">Lumi</span>
+  </div>
+  <h1 id="authTitle">Seu iPhone<br>leve de <em>novo.</em></h1>
+  <p class="lead" id="authLead">Guarde fotos, vídeos e documentos na sua nuvem e libere espaço no celular sem perder nada.</p>
+  <form id="authForm" autocomplete="on">
+    <label class="field" id="nameField"><input name="name" placeholder="Seu nome" autocomplete="name"></label>
+    <label class="field"><input name="email" type="email" placeholder="E-mail" autocomplete="email" required></label>
+    <label class="field"><input name="password" type="password" placeholder="Senha (mín. 6 caracteres)" autocomplete="current-password" required></label>
+    <div class="err" id="authErr"></div>
+    <button class="btn" id="authBtn">Criar minha conta grátis</button>
+  </form>
+  <div class="switch" id="authSwitch">Já tem conta? <button type="button">Entrar</button></div>
+</section>
+
+<!-- PAINEL -->
+<main class="app hidden" id="appView">
+  <div class="top">
+    <div class="logo">
+      <svg viewBox="0 0 48 48"><path d="M14 36a9 9 0 0 1-1.2-17.9A12 12 0 0 1 36 16.5 8 8 0 0 1 35 36Z" fill="url(#g)"/><path d="M24 31V21m0 0-4.5 4.5M24 21l4.5 4.5" stroke="#0f1630" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="brand">Lumi</span>
+    </div>
+    <button class="avatar" id="avatarBtn">?</button>
+  </div>
+
+  <div class="meter">
+    <div class="row"><b id="usedTxt">0 MB</b><small id="quotaTxt">de 5 GB</small></div>
+    <div class="bar"><i id="usedBar" style="width:0"></i></div>
+    <div class="tip" id="meterTip">Envie seus arquivos e depois apague do iPhone com tranquilidade.</div>
+  </div>
+
+  <input class="search" id="search" type="search" placeholder="Buscar pelo nome do arquivo">
+  <div class="tools" id="filters">
+    <button class="chip on" data-k="all">Tudo</button>
+    <button class="chip" data-k="foto">Fotos</button>
+    <button class="chip" data-k="video">Vídeos</button>
+    <button class="chip" data-k="doc">Documentos</button>
+    <button class="chip" data-k="audio">Áudios</button>
+    <button class="chip" data-k="fav">Favoritos</button>
+    <button class="chip" id="selMode">Selecionar</button>
+  </div>
+
+  <div class="grid" id="grid"></div>
+  <div class="empty hidden" id="empty">
+    <svg width="90" height="90" viewBox="0 0 48 48"><path d="M14 36a9 9 0 0 1-1.2-17.9A12 12 0 0 1 36 16.5 8 8 0 0 1 35 36Z" fill="none" stroke="#2a3670" stroke-width="2"/></svg>
+    <h2 id="emptyTitle">Sua nuvem está vazia</h2>
+    <div id="emptyText">Toque em <b>Enviar arquivos</b> e escolha fotos e vídeos da sua galeria.</div>
+  </div>
+
+  <button class="fab" id="fab">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    Enviar arquivos
+  </button>
+  <div class="selbar hidden" id="selbar">
+    <span id="selCount">0 selecionados</span>
+    <button id="selAll">Todos</button>
+    <button id="selDown">Baixar</button>
+    <button class="del" id="selDel">Apagar</button>
+  </div>
+  <input type="file" id="picker" multiple class="hidden">
+</main>
+
+<div class="toast hidden" id="toast"><div id="toastTxt"></div><div class="bar hidden" id="toastBarWrap"><i id="toastBar" style="width:0"></i></div></div>
+
+<div class="viewer hidden" id="viewer">
+  <header>
+    <button class="round" id="vClose" aria-label="Fechar">✕</button>
+    <div class="nm" id="vName"></div>
+  </header>
+  <div class="stage" id="vStage"></div>
+  <footer>
+    <a id="vDown" href="#"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Salvar</a>
+    <button id="vShare"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 15V4m0 0L8 8m4-4 4 4M6 12v7h12v-7"/></svg>Compartilhar</button>
+    <button id="vFav"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linejoin="round"><path d="m12 4 2.5 5 5.5.8-4 3.9.9 5.5L12 16.6 7.1 19.2l.9-5.5-4-3.9 5.5-.8Z"/></svg><span id="vFavTxt">Favoritar</span></button>
+    <button id="vDel"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M5 7h14M10 7V5h4v2m-7 0 1 13h8l1-13"/></svg>Apagar</button>
+  </footer>
+</div>
+
+<div class="menu hidden" id="menu">
+  <div class="sheet">
+    <h3 id="mName"></h3>
+    <p id="mEmail"></p>
+    <button class="item" id="mInstall">Colocar Lumi na tela de início</button>
+    <button class="item" id="mLogout" style="color:var(--danger)">Sair da conta</button>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = async (url, opt = {}) => {
+  const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opt });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || 'Erro de conexão');
+  return data;
+};
+const fmt = b => b < 1024 ** 2 ? (b / 1024).toFixed(0) + ' KB' : b < 1024 ** 3 ? (b / 1024 ** 2).toFixed(1).replace('.', ',') + ' MB' : (b / 1024 ** 3).toFixed(2).replace('.', ',') + ' GB';
+
+// estrelas de fundo
+for (let i = 0; i < 40; i++) { const s = document.createElement('span'); s.style.left = Math.random() * 100 + '%'; s.style.top = Math.random() * 100 + '%'; s.style.opacity = Math.random() * .6; $('#sky').appendChild(s); }
+
+let files = [], filter = 'all', query = '', selecting = false, selected = new Set(), me = null, current = null;
+
+// ---------- Entrada ----------
+let mode = 'register';
+function setMode(m) {
+  mode = m;
+  $('#nameField').classList.toggle('hidden', m === 'login');
+  $('#authBtn').textContent = m === 'login' ? 'Entrar' : 'Criar minha conta grátis';
+  $('#authTitle').innerHTML = m === 'login' ? 'Que bom te ver<br>de <em>novo.</em>' : 'Seu iPhone<br>leve de <em>novo.</em>';
+  $('#authSwitch').innerHTML = m === 'login' ? 'Ainda não tem conta? <button type="button">Criar agora</button>' : 'Já tem conta? <button type="button">Entrar</button>';
+  $('#authSwitch button').onclick = () => setMode(m === 'login' ? 'register' : 'login');
+  $('#authErr').textContent = '';
+}
+$('#authSwitch button').onclick = () => setMode('login');
+$('#authForm').onsubmit = async e => {
+  e.preventDefault();
+  const body = Object.fromEntries(new FormData(e.target));
+  $('#authBtn').disabled = true;
+  try { await api('/api/' + mode, { method: 'POST', body: JSON.stringify(body) }); await boot(); }
+  catch (err) { $('#authErr').textContent = err.message; }
+  $('#authBtn').disabled = false;
+};
+
+// ---------- Painel ----------
+async function boot() {
+  try { me = await api('/api/me'); } catch { $('#authView').classList.remove('hidden'); $('#appView').classList.add('hidden'); return; }
+  $('#authView').classList.add('hidden'); $('#appView').classList.remove('hidden');
+  $('#avatarBtn').textContent = me.name[0].toUpperCase();
+  $('#mName').textContent = me.name; $('#mEmail').textContent = me.email;
+  files = await api('/api/files');
+  render();
+}
+async function refreshMe() { me = await api('/api/me'); renderMeter(); }
+function renderMeter() {
+  $('#usedTxt').textContent = fmt(me.used);
+  $('#quotaTxt').textContent = 'de ' + fmt(me.quota);
+  const p = Math.min(100, me.used / me.quota * 100);
+  $('#usedBar').style.width = p + '%';
+  $('#meterTip').textContent = files.length
+    ? `${files.length} arquivo${files.length > 1 ? 's' : ''} guardado${files.length > 1 ? 's' : ''} com segurança. Já pode apagar do iPhone o que está aqui.`
+    : 'Envie seus arquivos e depois apague do iPhone com tranquilidade.';
+}
+function visible() {
+  return files.filter(f => (filter === 'all' || (filter === 'fav' ? f.fav : f.kind === filter)) && f.name.toLowerCase().includes(query));
+}
+function render() {
+  renderMeter();
+  const list = visible();
+  const g = $('#grid'); g.innerHTML = '';
+  $('#empty').classList.toggle('hidden', list.length > 0);
+  if (!list.length && files.length) { $('#emptyTitle').textContent = 'Nada por aqui'; $('#emptyText').textContent = 'Nenhum arquivo combina com esse filtro.'; }
+  else { $('#emptyTitle').textContent = 'Sua nuvem está vazia'; $('#emptyText').innerHTML = 'Toque em <b>Enviar arquivos</b> e escolha fotos e vídeos da sua galeria.'; }
+  for (const f of list) {
+    const t = document.createElement('div');
+    t.className = 'tile' + (selected.has(f.id) ? ' sel' : '');
+    const src = `/api/files/${f.id}/view`;
+    const ext = (f.name.split('.').pop() || '').slice(0, 4).toUpperCase();
+    const browserImg = f.kind === 'foto' && !/heic|heif/i.test(f.mime + f.name);
+    if (browserImg) t.innerHTML = `<img loading="lazy" src="${src}" alt="">`;
+    else if (f.kind === 'video') t.innerHTML = `<video muted playsinline preload="metadata" src="${src}#t=0.1"></video><span class="badge">▶ vídeo</span>`;
+    else t.innerHTML = `<div class="ic"><div><strong>${ext || 'ARQ'}</strong>${esc(f.name).slice(0, 40)}</div></div>`;
+    if (f.fav) t.insertAdjacentHTML('beforeend', '<span class="star">★</span>');
+    t.onclick = () => selecting ? toggleSel(f.id) : openViewer(f);
+    g.appendChild(t);
+  }
+}
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+$('#filters').onclick = e => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  if (b.id === 'selMode') { setSelecting(!selecting); return; }
+  document.querySelectorAll('.chip[data-k]').forEach(c => c.classList.toggle('on', c === b));
+  filter = b.dataset.k; render();
+};
+$('#search').oninput = e => { query = e.target.value.toLowerCase(); render(); };
+
+// ---------- Seleção ----------
+function setSelecting(on) {
+  selecting = on; selected.clear();
+  $('#selMode').classList.toggle('on', on);
+  $('#selMode').textContent = on ? 'Cancelar' : 'Selecionar';
+  $('#selbar').classList.toggle('hidden', !on);
+  $('#fab').classList.toggle('hidden', on);
+  updSel(); render();
+}
+function toggleSel(id) { selected.has(id) ? selected.delete(id) : selected.add(id); updSel(); render(); }
+function updSel() { $('#selCount').textContent = `${selected.size} selecionado${selected.size === 1 ? '' : 's'}`; }
+$('#selAll').onclick = () => { visible().forEach(f => selected.add(f.id)); updSel(); render(); };
+$('#selDown').onclick = () => {
+  [...selected].forEach((id, i) => setTimeout(() => { const a = document.createElement('a'); a.href = `/api/files/${id}/download`; a.click(); }, i * 600));
+};
+$('#selDel').onclick = async () => {
+  if (!selected.size || !confirm(`Apagar ${selected.size} arquivo(s) da Lumi? Isso não pode ser desfeito.`)) return;
+  for (const id of selected) await api(`/api/files/${id}`, { method: 'DELETE' });
+  files = files.filter(f => !selected.has(f.id));
+  setSelecting(false); refreshMe();
+};
+
+// ---------- Envio ----------
+$('#fab').onclick = () => $('#picker').click();
+$('#picker').onchange = e => { if (e.target.files.length) uploadFiles([...e.target.files]); e.target.value = ''; };
+function toast(txt, progress) {
+  $('#toast').classList.remove('hidden'); $('#toastTxt').textContent = txt;
+  $('#toastBarWrap').classList.toggle('hidden', progress == null);
+  if (progress != null) $('#toastBar').style.width = progress + '%';
+}
+const hideToast = (ms = 2500) => setTimeout(() => $('#toast').classList.add('hidden'), ms);
+function uploadFiles(list) {
+  // envia em lotes para não travar com vídeos grandes
+  const batches = []; let cur = [], size = 0;
+  for (const f of list) { if (cur.length && (size + f.size > 200 * 1024 ** 2 || cur.length >= 20)) { batches.push(cur); cur = []; size = 0; } cur.push(f); size += f.size; }
+  if (cur.length) batches.push(cur);
+  const total = list.reduce((s, f) => s + f.size, 0); let done = 0, idx = 0;
+  const next = () => {
+    if (idx >= batches.length) { toast(`Pronto! ${list.length} arquivo(s) guardado(s) na Lumi.`); hideToast(); refreshMe(); render(); return; }
+    const batch = batches[idx++]; const fd = new FormData(); batch.forEach(f => fd.append('files', f));
+    const bsize = batch.reduce((s, f) => s + f.size, 0);
+    const xhr = new XMLHttpRequest(); xhr.open('POST', '/api/upload');
+    xhr.upload.onprogress = ev => toast(`Enviando ${list.length} arquivo(s)… não feche esta tela`, Math.round((done + ev.loaded) / total * 100));
+    xhr.onload = () => {
+      let data = {}; try { data = JSON.parse(xhr.responseText); } catch {}
+      if (xhr.status >= 300) { toast(data.error || 'Falha no envio.'); hideToast(4000); refreshMe(); render(); return; }
+      files = [...data, ...files]; done += bsize; render(); next();
+    };
+    xhr.onerror = () => { toast('Conexão caiu. Tente enviar de novo.'); hideToast(4000); };
+    xhr.send(fd);
+  };
+  toast('Preparando envio…', 0); next();
+}
+
+// ---------- Visualizador ----------
+function openViewer(f) {
+  current = f;
+  const src = `/api/files/${f.id}/view`;
+  $('#vName').textContent = f.name;
+  const st = $('#vStage');
+  if (f.kind === 'foto') st.innerHTML = `<img src="${src}" alt="">`;
+  else if (f.kind === 'video') st.innerHTML = `<video src="${src}" controls playsinline autoplay></video>`;
+  else if (f.kind === 'audio') st.innerHTML = `<audio src="${src}" controls autoplay></audio>`;
+  else if (/pdf|text/.test(f.mime)) st.innerHTML = `<iframe src="${src}"></iframe>`;
+  else st.innerHTML = `<div style="text-align:center;color:var(--soft)"><div style="font-size:42px;font-family:'Bricolage Grotesque';color:var(--accent2)">${esc((f.name.split('.').pop() || 'ARQ').toUpperCase())}</div>${fmt(f.size)}<br>Toque em Salvar para abrir no iPhone.</div>`;
+  $('#vDown').href = `/api/files/${f.id}/download`;
+  $('#vFavTxt').textContent = f.fav ? 'Desfavoritar' : 'Favoritar';
+  $('#viewer').classList.remove('hidden');
+}
+$('#vClose').onclick = () => { $('#viewer').classList.add('hidden'); $('#vStage').innerHTML = ''; };
+$('#vFav').onclick = async () => {
+  const upd = await api(`/api/files/${current.id}`, { method: 'PATCH', body: JSON.stringify({ fav: !current.fav }) });
+  Object.assign(current, upd); $('#vFavTxt').textContent = current.fav ? 'Desfavoritar' : 'Favoritar'; render();
+};
+$('#vDel').onclick = async () => {
+  if (!confirm('Apagar este arquivo da Lumi?')) return;
+  await api(`/api/files/${current.id}`, { method: 'DELETE' });
+  files = files.filter(f => f.id !== current.id); $('#vClose').click(); refreshMe(); render();
+};
+$('#vShare').onclick = async () => {
+  try {
+    toast('Preparando arquivo…');
+    const blob = await (await fetch(`/api/files/${current.id}/view`)).blob();
+    const file = new File([blob], current.name, { type: current.mime });
+    $('#toast').classList.add('hidden');
+    if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file] });
+    else $('#vDown').click();
+  } catch (e) { $('#toast').classList.add('hidden'); }
+};
+
+// ---------- Menu ----------
+$('#avatarBtn').onclick = () => $('#menu').classList.remove('hidden');
+$('#menu').onclick = e => { if (e.target.id === 'menu') $('#menu').classList.add('hidden'); };
+$('#mLogout').onclick = async () => { await api('/api/logout', { method: 'POST' }); location.reload(); };
+$('#mInstall').onclick = () => alert('No Safari, toque no botão Compartilhar (quadrado com seta) e depois em "Adicionar à Tela de Início". A Lumi vai abrir como um app.');
+
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "Lumi",
+  "short_name": "Lumi",
+  "description": "Sua nuvem pessoal para liberar espaço no iPhone",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1630",
+  "theme_color": "#0f1630",
+  "icons": [
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
