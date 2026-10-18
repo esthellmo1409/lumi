@@ -126,7 +126,7 @@ input{font:inherit}
   <form id="authForm" autocomplete="on">
     <label class="field" id="nameField"><input name="name" placeholder="Seu nome" autocomplete="name"></label>
     <label class="field"><input name="email" type="email" placeholder="E-mail" autocomplete="email" required></label>
-    <label class="field"><input name="password" type="password" placeholder="Senha (mín. 6 caracteres)" autocomplete="current-password" required></label>
+    <label class="field"><input name="password" type="password" placeholder="Senha (8+ caracteres, letras e números)" autocomplete="current-password" required></label>
     <div class="err" id="authErr"></div>
     <button class="btn" id="authBtn">Criar minha conta grátis</button>
   </form>
@@ -201,8 +201,21 @@ input{font:inherit}
     <h3 id="mName"></h3>
     <p id="mEmail"></p>
     <button class="item" id="mInstall">Colocar Lumi na tela de início</button>
+    <button class="item" id="mPass">Trocar senha</button>
+    <button class="item" id="mAll">Sair de todos os aparelhos</button>
     <button class="item" id="mLogout" style="color:var(--danger)">Sair da conta</button>
   </div>
+</div>
+
+<div class="menu hidden" id="passSheet">
+  <form class="sheet" id="passForm">
+    <h3>Trocar senha</h3>
+    <p>Os outros aparelhos conectados vão precisar entrar de novo.</p>
+    <label class="field"><input id="pCur" type="password" placeholder="Senha atual" autocomplete="current-password" required></label>
+    <label class="field"><input id="pNew" type="password" placeholder="Nova senha (8+ caracteres, letras e números)" autocomplete="new-password" required></label>
+    <div class="err" id="passErr"></div>
+    <button class="btn" id="passBtn">Salvar nova senha</button>
+  </form>
 </div>
 
 <script>
@@ -387,6 +400,20 @@ $('#vShare').onclick = async () => {
 // ---------- Menu ----------
 $('#avatarBtn').onclick = () => $('#menu').classList.remove('hidden');
 $('#menu').onclick = e => { if (e.target.id === 'menu') $('#menu').classList.add('hidden'); };
+$('#mPass').onclick = () => { $('#menu').classList.add('hidden'); $('#passErr').textContent = ''; $('#passForm').reset(); $('#passSheet').classList.remove('hidden'); };
+$('#passSheet').onclick = e => { if (e.target.id === 'passSheet') $('#passSheet').classList.add('hidden'); };
+$('#passForm').onsubmit = async e => {
+  e.preventDefault(); $('#passBtn').disabled = true;
+  try {
+    await api('/api/password', { method: 'POST', body: JSON.stringify({ current: $('#pCur').value, next: $('#pNew').value }) });
+    $('#passSheet').classList.add('hidden'); toast('Senha trocada. Os outros aparelhos foram desconectados.'); hideToast(3500);
+  } catch (err) { $('#passErr').textContent = err.message; }
+  $('#passBtn').disabled = false;
+};
+$('#mAll').onclick = async () => {
+  if (!confirm('Desconectar a sua conta de todos os aparelhos, inclusive este?')) return;
+  await api('/api/logout-all', { method: 'POST' }); location.reload();
+};
 $('#mLogout').onclick = async () => { await api('/api/logout', { method: 'POST' }); location.reload(); };
 $('#mInstall').onclick = () => alert('No Safari, toque no botão Compartilhar (quadrado com seta) e depois em "Adicionar à Tela de Início". A Lumi vai abrir como um app.');
 

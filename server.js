@@ -46,20 +46,44 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(express.json());
 app.use(cookieParser());
+// Cabeçalhos de segurança
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (process.env.NODE_ENV === 'production') res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'", "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", "font-src https://fonts.gstatic.com",
+    "img-src 'self' blob: data:", "media-src 'self' blob:", "frame-src 'self'",
+    "frame-ancestors 'self'", "base-uri 'none'", "form-action 'self'", "object-src 'none'",
+  ].join('; '));
+  next();
+});
+// Bloqueia pedidos de alteração vindos de outros sites
+app.use('/api', (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD') return next();
+  const origin = req.get('origin');
+  let host = null; try { host = origin && new URL(origin).host; } catch {}
+  if (origin && host !== req.get('host')) return res.status(403).json({ error: 'Origem não permitida.' });
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 function setSession(res, user) {
-  const token = jwt.sign({ uid: user.id }, JWT_SECRET, { expiresIn: '60d' });
+  const token = jwt.sign({ uid: user.id, tv: user.tv || 0 }, JWT_SECRET, { expiresIn: '30d' });
   res.cookie('lumi', token, {
     httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production',
-    maxAge: 60 * 24 * 3600 * 1000,
+    maxAge: 30 * 24 * 3600 * 1000,
   });
 }
 function auth(req, res, next) {
   try {
-    const { uid } = jwt.verify(req.cookies.lumi || '', JWT_SECRET);
+    const { uid, tv } = jwt.verify(req.cookies.lumi || '', JWT_SECRET);
     const user = db.users.find(u => u.id === uid);
-    if (!user) throw new Error();
+    // sessão antiga (depois de trocar senha ou "sair de todos") deixa de valer
+    if (!user || (tv || 0) !== (user.tv || 0)) throw new Error();
     req.user = user;
     next();
   } catch {
@@ -69,23 +93,32 @@ function auth(req, res, next) {
 
 // Proteção simples contra tentativa de senha em massa
 const attempts = new Map();
-function tooMany(key) {
+function tooMany(key, max = 20) {
   const now = Date.now();
   const a = attempts.get(key) || { n: 0, t: now };
   if (now - a.t > 15 * 60 * 1000) { a.n = 0; a.t = now; }
   a.n++; attempts.set(key, a);
-  return a.n > 20;
+  return a.n > (key.startsWith('reg:') ? 5 : key.startsWith('ip:') ? 60 : max);
+}
+
+function weakPassword(p) {
+  if (p.length < 8) return 'A senha precisa ter pelo menos 8 caracteres.';
+  if (!/[A-Za-z]/.test(p) || !/\d/.test(p)) return 'Use letras e números na senha.';
+  if (p.length > 200) return 'Senha longa demais.';
+  return null;
 }
 
 app.post('/api/register', async (req, res) => {
+  if (tooMany('reg:' + req.ip)) return res.status(429).json({ error: 'Muitas contas criadas daqui. Tente mais tarde.' });
   if (!ALLOW_SIGNUP) return res.status(403).json({ error: 'Cadastros estão fechados.' });
   const name = String(req.body.name || '').trim().slice(0, 60);
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
   if (!name || !/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: 'Preencha nome e um e-mail válido.' });
-  if (password.length < 6) return res.status(400).json({ error: 'A senha precisa ter pelo menos 6 caracteres.' });
+  const weak = weakPassword(password);
+  if (weak) return res.status(400).json({ error: weak });
   if (db.users.some(u => u.email === email)) return res.status(409).json({ error: 'Esse e-mail já tem conta. Entre com ele.' });
-  const user = { id: id(), name, email, hash: await bcrypt.hash(password, 10), createdAt: Date.now() };
+  const user = { id: id(), name, email, hash: await bcrypt.hash(password, 12), tv: 0, createdAt: Date.now() };
   db.users.push(user); saveDb();
   setSession(res, user);
   res.json({ ok: true });
@@ -93,7 +126,7 @@ app.post('/api/register', async (req, res) => {
 
 app.post('/api/login', async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
-  if (tooMany(req.ip + email)) return res.status(429).json({ error: 'Muitas tentativas. Espere alguns minutos.' });
+  if (tooMany(req.ip + email) || tooMany('ip:' + req.ip)) return res.status(429).json({ error: 'Muitas tentativas. Espere alguns minutos.' });
   const user = db.users.find(u => u.email === email);
   if (!user || !(await bcrypt.compare(String(req.body.password || ''), user.hash))) {
     return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
@@ -103,6 +136,23 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/logout', (req, res) => { res.clearCookie('lumi'); res.json({ ok: true }); });
+
+app.post('/api/password', auth, async (req, res) => {
+  if (tooMany('pw:' + req.user.id)) return res.status(429).json({ error: 'Muitas tentativas. Espere alguns minutos.' });
+  const current = String(req.body.current || ''), next = String(req.body.next || '');
+  if (!(await bcrypt.compare(current, req.user.hash))) return res.status(401).json({ error: 'A senha atual está incorreta.' });
+  const weak = weakPassword(next);
+  if (weak) return res.status(400).json({ error: weak });
+  req.user.hash = await bcrypt.hash(next, 12);
+  req.user.tv = (req.user.tv || 0) + 1; // desconecta os outros aparelhos
+  saveDb(); setSession(res, req.user);
+  res.json({ ok: true });
+});
+
+app.post('/api/logout-all', auth, (req, res) => {
+  req.user.tv = (req.user.tv || 0) + 1; saveDb();
+  res.clearCookie('lumi'); res.json({ ok: true });
+});
 
 app.get('/api/me', auth, (req, res) => {
   res.json({ name: req.user.name, email: req.user.email, used: usedBytes(req.user.id), quota: QUOTA_BYTES });
@@ -161,13 +211,17 @@ function ownFile(req, res) {
 // Visualizar (suporta vídeo com avanço/retrocesso via Range)
 app.get('/api/files/:id/view', auth, (req, res) => {
   const f = ownFile(req, res); if (!f) return;
-  res.type(f.mime);
+  // arquivos que poderiam rodar código no navegador são mostrados só como texto
+  const risky = /html|svg|xml|javascript|ecmascript/i.test(f.mime) || /\.(html?|svg|xml|js|mjs|xhtml)$/i.test(f.name);
+  res.type(risky ? 'text/plain' : f.mime);
+  res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(f.name)}`);
   res.sendFile(path.join(FILES_DIR, f.id));
 });
 
 app.get('/api/files/:id/download', auth, (req, res) => {
   const f = ownFile(req, res); if (!f) return;
+  res.setHeader('Cache-Control', 'private, no-store');
   res.download(path.join(FILES_DIR, f.id), f.name);
 });
 
