@@ -257,6 +257,14 @@ input,select{font:inherit;color:inherit}
 .preview .pbtn.soft{background:var(--accent-soft);color:var(--accent)}
 
 /* cobrança para entrar */
+.lockview{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px max(22px,env(safe-area-inset-right)) 24px max(22px,env(safe-area-inset-left))}
+.lockview .box{width:100%;max-width:380px;text-align:center}
+.lockview .lockicon{width:72px;height:72px;margin:0 auto 18px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent)}
+.lockview .lockicon .ico{width:32px;height:32px}
+.lockview h2{font-size:26px;margin:0 0 8px}
+.lockview p{color:var(--muted);margin:0 0 22px;line-height:1.5}
+.lockview form{text-align:left}
+.seg.four{grid-template-columns:repeat(4,minmax(0,1fr))}
 .payview{max-width:520px;margin:0 auto;padding:28px max(20px,env(safe-area-inset-right)) 60px max(20px,env(safe-area-inset-left))}
 .payview h1{font-size:30px;line-height:1.1;margin:18px 0 10px}
 .payview .lead{color:var(--muted);line-height:1.5;margin:0 0 18px}
@@ -427,6 +435,20 @@ input,select{font:inherit;color:inherit}
   <input type="file" id="picker" multiple class="hidden">
 </main>
 
+<section class="lockview hidden" id="lockView" aria-live="polite">
+  <div class="box">
+    <div class="lockicon"><svg class="ico"><use href="#i-lock"/></svg></div>
+    <h2>Lumi bloqueado</h2>
+    <p id="lockText">Por segurança, o Lumi travou depois de alguns minutos sem uso. Digite sua senha para continuar.</p>
+    <form id="lockForm">
+      <label class="field pw"><input id="lockPass" type="password" placeholder="Sua senha" autocomplete="current-password" required></label>
+      <div class="err" id="lockErr"></div>
+      <button class="btn" id="lockBtn">Desbloquear</button>
+    </form>
+    <button type="button" class="linkbtn quiet" id="lockOut">Sair da conta</button>
+  </div>
+</section>
+
 <div class="toast hidden" id="toast"><div id="toastTxt"></div><div class="bar hidden" id="toastBarWrap"><i id="toastBar" style="width:0"></i></div></div>
 
 <div class="viewer hidden" id="viewer">
@@ -462,7 +484,7 @@ input,select{font:inherit;color:inherit}
 <div class="menu hidden" id="themeSheet">
   <div class="sheet">
     <h3>Aparência</h3>
-    <p>Escolha o tema e a cor dos botões e ícones. Fica salvo na sua conta.</p>
+    <p>Escolha o tema, a cor dos botões e ícones e depois de quanto tempo sem uso o Lumi trava. Fica salvo na sua conta.</p>
     <span class="label">Tema</span>
     <div class="seg" id="modeSeg">
       <button type="button" data-mode="auto"><svg class="ico"><use href="#i-auto"/></svg>Automático</button>
@@ -471,6 +493,13 @@ input,select{font:inherit;color:inherit}
     </div>
     <span class="label">Cor de destaque</span>
     <div class="swatches" id="swatches"></div>
+    <span class="label">Bloqueio automático</span>
+    <div class="seg four" id="lockSeg">
+      <button type="button" data-min="5">5 min</button>
+      <button type="button" data-min="15">15 min</button>
+      <button type="button" data-min="30">30 min</button>
+      <button type="button" data-min="0">Nunca</button>
+    </div>
     <span class="label">Prévia</span>
     <div class="preview">
       <div class="pbar"><i></i></div>
@@ -527,6 +556,7 @@ const $ = s => document.querySelector(s);
 const api = async (url, opt = {}) => {
   const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opt });
   const data = await r.json().catch(() => ({}));
+  if (r.status === 423) { lockNow(); throw new Error(data.error || 'Bloqueado'); }
   if (!r.ok) throw new Error(data.error || 'Erro de conexão');
   return data;
 };
@@ -539,7 +569,7 @@ const ACCENTS = [
   ['ambar', 'Âmbar', '#F6A55B'], ['azul', 'Azul', '#5E9CFF'], ['verde', 'Verde', '#3CCB8E'],
   ['violeta', 'Violeta', '#A08CFF'], ['rosa', 'Rosa', '#FF7DA4'], ['grafite', 'Grafite', '#8A93A8'],
 ];
-let theme = { mode: 'auto', accent: 'ambar' };
+let theme = { mode: 'auto', accent: 'ambar', lockMin: 5 };
 try { theme = { ...theme, ...JSON.parse(localStorage.getItem('lumi-theme') || '{}') }; } catch {}
 const darkQuery = matchMedia('(prefers-color-scheme: dark)');
 function applyTheme() {
@@ -549,6 +579,7 @@ function applyTheme() {
   document.querySelector('meta[name=theme-color]').content = dark ? '#0D1120' : '#F3F4F8';
   document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === theme.mode));
   document.querySelectorAll('.swatch').forEach(b => b.classList.toggle('on', b.dataset.accent === theme.accent));
+  document.querySelectorAll('#lockSeg button').forEach(b => b.classList.toggle('on', Number(b.dataset.min) === Number(theme.lockMin)));
 }
 darkQuery.addEventListener?.('change', () => theme.mode === 'auto' && applyTheme());
 function saveTheme() {
@@ -727,7 +758,8 @@ async function boot(skipRecovery) {
   $('#helloName').textContent = me.name.trim().split(/\s+/)[0];
   $('#mName').textContent = me.name; $('#mEmail').textContent = me.email;
   $('#mAvatar').textContent = me.name[0].toUpperCase();
-  if (me.prefs && (me.prefs.mode !== theme.mode || me.prefs.accent !== theme.accent)) {
+  if (me.prefs && (me.prefs.mode !== theme.mode || me.prefs.accent !== theme.accent || (me.prefs.lockMin ?? 5) !== theme.lockMin)) {
+    me.prefs.lockMin = me.prefs.lockMin ?? 5;
     theme = { ...theme, ...me.prefs }; try { localStorage.setItem('lumi-theme', JSON.stringify(theme)); } catch {} applyTheme();
   }
   $('#mAdmin').classList.toggle('hidden', !me.admin);
@@ -872,7 +904,8 @@ let uploading = false;
 window.addEventListener('beforeunload', e => { if (uploading) { e.preventDefault(); e.returnValue = ''; } });
 async function uploadDirect(list) {
   uploading = true;
-  try { return await uploadDirectInner(list); } finally { uploading = false; }
+  const keep = setInterval(() => api('/api/ping', { method: 'POST' }).catch(() => {}), 60000);
+  try { return await uploadDirectInner(list); } finally { uploading = false; clearInterval(keep); lastAct = Date.now(); }
 }
 // Miniatura de 360px gerada no próprio iPhone, para a grade abrir rápido
 const canThumb = f => /^(image|video)\//.test(f.type) || /\.(heic|heif|jpe?g|png|mov|mp4)$/i.test(f.name);
@@ -1187,6 +1220,47 @@ $('#mTheme').onclick = () => { $('#menu').classList.add('hidden'); applyTheme();
 applyTheme();
 // barra de cima ganha uma linha ao rolar
 addEventListener('scroll', () => $('#topbar').classList.toggle('scrolled', scrollY > 4), { passive: true });
+
+$('#lockSeg').onclick = e => { const b = e.target.closest('button'); if (b) { theme.lockMin = Number(b.dataset.min); saveTheme(); } };
+
+// ---------- Bloqueio por inatividade ----------
+let lastAct = Date.now(), lastPing = Date.now(), isLocked = false;
+function lockNow() {
+  if (isLocked || !me) return;
+  isLocked = true;
+  // esconde tudo o que estava na tela
+  if (!$('#viewer').classList.contains('hidden')) $('#vClose').click();
+  document.querySelectorAll('.menu').forEach(m => m.classList.add('hidden'));
+  document.querySelectorAll('video').forEach(v => v.pause());
+  $('#grid').innerHTML = '';
+  $('#lockText').textContent = `Oi, ${me.name.trim().split(/\s+/)[0]}. Por segurança, o Lumi travou depois de alguns minutos sem uso. Digite sua senha para continuar.`;
+  $('#lockForm').reset(); $('#lockErr').textContent = '';
+  $('#lockView').classList.remove('hidden');
+}
+function onActivity() {
+  if (isLocked || !me) return;
+  lastAct = Date.now();
+  if (lastAct - lastPing > 60000) { lastPing = lastAct; api('/api/ping', { method: 'POST' }).catch(() => {}); }
+}
+['pointerdown', 'keydown', 'touchstart', 'wheel', 'scroll'].forEach(ev => addEventListener(ev, onActivity, { passive: true, capture: true }));
+function checkIdle() {
+  const min = Number(theme.lockMin ?? 5);
+  if (!me || isLocked || uploading || !min || $('#appView').classList.contains('hidden')) return;
+  if (Date.now() - lastAct > min * 60000) lockNow();
+}
+setInterval(checkIdle, 10000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkIdle(); });
+$('#lockForm').onsubmit = async e => {
+  e.preventDefault(); $('#lockBtn').disabled = true; $('#lockErr').textContent = '';
+  try {
+    await api('/api/unlock', { method: 'POST', body: JSON.stringify({ password: $('#lockPass').value }) });
+    isLocked = false; lastAct = lastPing = Date.now();
+    $('#lockView').classList.add('hidden'); $('#lockForm').reset();
+    render(); refreshMe();
+  } catch (err) { $('#lockErr').textContent = err.message; }
+  $('#lockBtn').disabled = false;
+};
+$('#lockOut').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); };
 
 // botão de fechar nas telas que sobem de baixo
 document.querySelectorAll('.menu').forEach(m => {

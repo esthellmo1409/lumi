@@ -95,18 +95,30 @@ function setSession(res, user) {
     maxAge: 30 * 24 * 3600 * 1000,
   });
 }
+// ---------- Bloqueio por inatividade ----------
+// Cada sessão guarda o último uso. Depois do tempo escolhido (padrão 5 min) sem mexer,
+// o servidor recusa tudo até a pessoa digitar a senha de novo.
+const lastSeen = new Map(); // sessão -> último uso (ms)
+const sessKey = req => crypto.createHash('sha256').update(req.cookies.lumi || '').digest('hex').slice(0, 32);
+const lockMs = user => { const m = (user.prefs && user.prefs.lockMin !== undefined) ? user.prefs.lockMin : 5; return m > 0 ? m * 60000 : 0; };
+setInterval(() => { const old = Date.now() - 24 * 3600 * 1000; for (const [k, t] of lastSeen) if (t < old) lastSeen.delete(k); }, 3600 * 1000);
+
+function sessionUser(req) {
+  const { uid, tv } = jwt.verify(req.cookies.lumi || '', JWT_SECRET);
+  const user = db.users.find(u => u.id === uid);
+  // sessão antiga (depois de trocar senha ou "sair de todos") deixa de valer
+  if (!user || (tv || 0) !== (user.tv || 0)) throw new Error();
+  return user;
+}
 function auth(req, res, next) {
-  try {
-    const { uid, tv } = jwt.verify(req.cookies.lumi || '', JWT_SECRET);
-    const user = db.users.find(u => u.id === uid);
-    // sessão antiga (depois de trocar senha ou "sair de todos") deixa de valer
-    if (!user || (tv || 0) !== (user.tv || 0)) throw new Error();
-    if (user.blocked) return res.status(403).json({ error: 'Sua conta está suspensa. Fale com o suporte do Lumi.' });
-    req.user = user;
-    next();
-  } catch {
-    res.status(401).json({ error: 'Faça login para continuar.' });
-  }
+  let user;
+  try { user = sessionUser(req); } catch { return res.status(401).json({ error: 'Faça login para continuar.' }); }
+  if (user.blocked) return res.status(403).json({ error: 'Sua conta está suspensa. Fale com o suporte do Lumi.' });
+  const key = sessKey(req), now = Date.now(), t = lastSeen.get(key), idle = lockMs(user);
+  if (idle && t && now - t > idle) return res.status(423).json({ error: 'O Lumi foi bloqueado por inatividade. Digite sua senha.', idleLocked: true });
+  lastSeen.set(key, now);
+  req.user = user;
+  next();
 }
 
 // Conta que precisa pagar para usar: só pode ver/baixar/apagar o que já tem e pagar
@@ -433,10 +445,23 @@ app.post('/api/mp/webhook', async (req, res) => {
 });
 
 // tema e cor escolhidos pela pessoa
+app.post('/api/ping', auth, (req, res) => res.json({ ok: true }));
+
+// desbloquear: só a senha, na mesma sessão
+app.post('/api/unlock', async (req, res) => {
+  let user;
+  try { user = sessionUser(req); } catch { return res.status(401).json({ error: 'Faça login para continuar.' }); }
+  if (tooMany('unlock:' + user.id, 10)) return res.status(429).json({ error: 'Muitas tentativas. Espere 15 minutos ou saia e entre de novo.' });
+  if (!(await bcrypt.compare(String(req.body.password || ''), user.hash))) return res.status(401).json({ error: 'Senha incorreta.' });
+  lastSeen.set(sessKey(req), Date.now());
+  res.json({ ok: true });
+});
+
 app.post('/api/prefs', auth, (req, res) => {
   const mode = ['auto', 'light', 'dark'].includes(req.body.mode) ? req.body.mode : 'auto';
   const accent = ['ambar', 'azul', 'verde', 'violeta', 'rosa', 'grafite'].includes(req.body.accent) ? req.body.accent : 'ambar';
-  req.user.prefs = { mode, accent }; saveDb();
+  const lockMin = [0, 5, 15, 30].includes(Number(req.body.lockMin)) ? Number(req.body.lockMin) : 5;
+  req.user.prefs = { mode, accent, lockMin }; saveDb();
   res.json({ ok: true });
 });
 
