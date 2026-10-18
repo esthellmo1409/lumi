@@ -56,6 +56,16 @@ input{font:inherit}
 .linkbtn{display:block;margin:14px auto 0;color:var(--accent2);font-weight:600;font-size:15px}
 .codein{font-family:"Bricolage Grotesque",Inter,sans-serif;font-size:30px!important;letter-spacing:12px;text-align:center;font-weight:700}
 .muted{color:var(--soft);font-size:14px;text-align:center;margin-top:14px}
+.buybtn{display:block;width:100%;margin-top:14px;padding:12px;border-radius:12px;border:1px solid var(--accent);color:var(--accent);font-weight:700;font-size:15px}
+.plans{display:grid;gap:10px;margin:6px 0 4px}
+.plan{display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:16px;border-radius:16px;border:1px solid var(--line);background:var(--card)}
+.plan.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.plan .gb{font-family:"Bricolage Grotesque",Inter,sans-serif;font-size:24px;font-weight:800;min-width:96px}
+.plan .info{flex:1;color:var(--soft);font-size:13px;line-height:1.4}
+.plan .price{text-align:right;font-weight:700;font-size:17px;white-space:nowrap}
+.plan .price small{display:block;color:var(--soft);font-weight:500;font-size:12px}
+.plan .tag{display:inline-block;background:var(--accent);color:#24140a;font-size:11px;font-weight:700;padding:2px 7px;border-radius:99px;margin-bottom:4px}
+.current{background:var(--card);border-radius:12px;padding:12px 14px;font-size:14px;margin-bottom:12px;color:var(--ink)}
 .err{color:var(--danger);font-size:14px;min-height:20px;margin:4px 0 10px}
 
 /* ---------- Painel ---------- */
@@ -180,6 +190,7 @@ input{font:inherit}
     <div class="row"><b id="usedTxt">0 MB</b><small id="quotaTxt">de 5 GB</small></div>
     <div class="bar"><i id="usedBar" style="width:0"></i></div>
     <div class="tip" id="meterTip">Envie seus arquivos e depois apague do iPhone com tranquilidade.</div>
+    <button class="buybtn" id="buyBtn">Comprar mais espaço</button>
   </div>
 
   <button class="addbtn" id="addTop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Adicionar arquivos</button>
@@ -239,6 +250,17 @@ input{font:inherit}
     <button class="item" id="mPass">Trocar senha</button>
     <button class="item" id="mAll">Sair de todos os aparelhos</button>
     <button class="item" id="mLogout" style="color:var(--danger)">Sair da conta</button>
+  </div>
+</div>
+
+<div class="menu hidden" id="planSheet">
+  <div class="sheet">
+    <h3>Mais espaço no Lumi</h3>
+    <p id="planLead">Escolha quanto espaço extra você quer. Paga com Pix ou cartão, e vale por 30 dias.</p>
+    <div class="current hidden" id="planCurrent"></div>
+    <div class="plans" id="planList"></div>
+    <div class="err" id="planErr"></div>
+    <button class="btn" id="planBtn">Continuar para o pagamento</button>
   </div>
 </div>
 
@@ -541,6 +563,47 @@ $('#vShare').onclick = async () => {
 // ---------- Menu ----------
 $('#avatarBtn').onclick = () => $('#menu').classList.remove('hidden');
 $('#menu').onclick = e => { if (e.target.id === 'menu') $('#menu').classList.add('hidden'); };
+// ---------- Comprar mais espaço ----------
+let planChoice = 'mais100';
+const brl = v => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+async function openPlans() {
+  $('#planErr').textContent = '';
+  $('#planSheet').classList.remove('hidden');
+  try {
+    const d = await api('/api/plans');
+    $('#planLead').textContent = `Seu plano inclui ${d.baseGB} GB. Escolha quanto espaço extra você quer. Paga com Pix ou cartão, e vale por 30 dias.`;
+    const cur = $('#planCurrent');
+    cur.classList.toggle('hidden', !d.current);
+    if (d.current) cur.textContent = `Você tem ${d.current.name} até ${new Date(d.current.until).toLocaleDateString('pt-BR')}. Comprar o mesmo plano soma mais 30 dias.`;
+    $('#planList').innerHTML = d.plans.map(p => `
+      <button type="button" class="plan${p.id === planChoice ? ' on' : ''}" data-id="${p.id}">
+        <span class="gb">${p.name}</span>
+        <span class="info">${p.id === 'mais100' ? '<span class="tag">Mais escolhido</span><br>' : ''}${brl(p.price / p.gb)} por GB</span>
+        <span class="price">${brl(p.price)}<small>por mês</small></span>
+      </button>`).join('');
+    document.querySelectorAll('.plan').forEach(b => b.onclick = () => {
+      planChoice = b.dataset.id;
+      document.querySelectorAll('.plan').forEach(x => x.classList.toggle('on', x === b));
+    });
+  } catch (err) { $('#planErr').textContent = err.message; }
+}
+$('#buyBtn').onclick = openPlans;
+$('#planSheet').onclick = e => { if (e.target.id === 'planSheet') $('#planSheet').classList.add('hidden'); };
+$('#planBtn').onclick = async () => {
+  $('#planBtn').disabled = true; $('#planErr').textContent = '';
+  try { const { url } = await api('/api/checkout', { method: 'POST', body: JSON.stringify({ plan: planChoice }) }); location.href = url; }
+  catch (err) { $('#planErr').textContent = err.message; $('#planBtn').disabled = false; }
+};
+// volta do Mercado Pago
+(() => {
+  const pago = new URLSearchParams(location.search).get('pago');
+  if (pago === null) return;
+  history.replaceState(null, '', '/');
+  const msg = { '1': 'Pagamento aprovado! Seu espaço extra é liberado em instantes.', '2': 'Pagamento em análise. Assim que for aprovado, o espaço é liberado.', '0': 'O pagamento não foi concluído. Você pode tentar de novo.' }[pago];
+  if (msg) setTimeout(() => { toast(msg); hideToast(6000); }, 600);
+  if (pago === '1') setTimeout(() => { if (me) refreshMe(); }, 8000);
+})();
+
 $('#mPass').onclick = () => { $('#menu').classList.add('hidden'); $('#passErr').textContent = ''; $('#passForm').reset(); $('#passSheet').classList.remove('hidden'); };
 $('#passSheet').onclick = e => { if (e.target.id === 'passSheet') $('#passSheet').classList.add('hidden'); };
 $('#passForm').onsubmit = async e => {

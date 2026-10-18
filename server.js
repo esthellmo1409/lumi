@@ -19,7 +19,6 @@ const QUOTA_BYTES = Number(process.env.QUOTA_MB || 5120) * 1024 * 1024; // cota 
 const QUOTA_OVERRIDES = new Map(String(process.env.QUOTA_OVERRIDES || '').split(',')
   .map(p => p.trim().split(':')).filter(([e, g]) => e && Number(g) > 0)
   .map(([e, g]) => [e.trim().toLowerCase(), Number(g) * 1024 ** 3]));
-const quotaFor = user => QUOTA_OVERRIDES.get(user.email) || QUOTA_BYTES;
 const MAX_FILE_BYTES = Number(process.env.MAX_FILE_MB || 2048) * 1024 * 1024; // 2 GB por arquivo
 const ALLOW_SIGNUP = process.env.ALLOW_SIGNUP !== 'false';
 
@@ -290,6 +289,82 @@ app.post('/api/password', auth, async (req, res) => {
 app.post('/api/logout-all', auth, (req, res) => {
   req.user.tv = (req.user.tv || 0) + 1; req.user.devices = []; saveDb();
   res.clearCookie('lumi'); res.json({ ok: true });
+});
+
+// ---------- Planos de espaço extra (Mercado Pago) ----------
+const PLANS = {
+  mais50:  { name: '+50 GB',  gb: 50,  price: 3.90 },
+  mais100: { name: '+100 GB', gb: 100, price: 6.90 },
+  mais256: { name: '+256 GB', gb: 256, price: 12.90 },
+};
+const MP_TOKEN = process.env.MERCADOPAGO_ACCESS_TOKEN || '';
+const PUBLIC_URL = process.env.PUBLIC_URL || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : '');
+console.log(MP_TOKEN ? '[pagamentos] Mercado Pago ATIVADO' : '[pagamentos] Mercado Pago desativado (defina MERCADOPAGO_ACCESS_TOKEN)');
+
+const activePlan = user => (user.plan && PLANS[user.plan] && user.planUntil > Date.now()) ? PLANS[user.plan] : null;
+function quotaFor(user) {
+  const plan = activePlan(user);
+  const base = QUOTA_BYTES + (plan ? plan.gb * 1024 ** 3 : 0);
+  return Math.max(base, QUOTA_OVERRIDES.get(user.email) || 0);
+}
+
+app.get('/api/plans', auth, (req, res) => {
+  const plan = activePlan(req.user);
+  res.json({
+    payments: !!MP_TOKEN,
+    baseGB: Math.round(QUOTA_BYTES / 1024 ** 3),
+    current: plan ? { id: req.user.plan, name: plan.name, until: req.user.planUntil } : null,
+    plans: Object.entries(PLANS).map(([id, p]) => ({ id, name: p.name, gb: p.gb, price: p.price })),
+  });
+});
+
+app.post('/api/checkout', auth, async (req, res) => {
+  const planId = String(req.body.plan || '');
+  const plan = PLANS[planId];
+  if (!plan) return res.status(400).json({ error: 'Escolha um plano.' });
+  if (!MP_TOKEN) return res.status(503).json({ error: 'Os pagamentos estão sendo ativados. Tente de novo em breve.' });
+  if (tooMany('pay:' + req.user.id, 15)) return res.status(429).json({ error: 'Muitas tentativas. Espere alguns minutos.' });
+  try {
+    const r = await fetch('https://api.mercadopago.com/checkout/preferences', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${MP_TOKEN}`, 'Content-Type': 'application/json', 'X-Idempotency-Key': id() },
+      body: JSON.stringify({
+        items: [{ id: planId, title: `Lumi ${plan.name} por 30 dias`, quantity: 1, currency_id: 'BRL', unit_price: plan.price }],
+        payer: { email: req.user.email },
+        external_reference: `${req.user.id}:${planId}`,
+        notification_url: `${PUBLIC_URL}/api/mp/webhook`,
+        back_urls: { success: `${PUBLIC_URL}/?pago=1`, pending: `${PUBLIC_URL}/?pago=2`, failure: `${PUBLIC_URL}/?pago=0` },
+        auto_return: 'approved',
+        statement_descriptor: 'LUMI',
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.init_point) { console.error('[pagamentos] erro ao criar cobrança', r.status, JSON.stringify(data).slice(0, 300)); throw new Error(); }
+    res.json({ url: data.init_point });
+  } catch { res.status(502).json({ error: 'Não consegui abrir o pagamento agora. Tente de novo.' }); }
+});
+
+// O Mercado Pago avisa aqui quando um pagamento muda; conferimos direto na API deles antes de liberar
+app.post('/api/mp/webhook', async (req, res) => {
+  res.sendStatus(200);
+  if (!MP_TOKEN) return;
+  const payId = (req.body && req.body.data && req.body.data.id) || req.query['data.id'] || (req.query.topic === 'payment' && req.query.id);
+  if (!payId || !/^\d+$/.test(String(payId))) return;
+  try {
+    const r = await fetch(`https://api.mercadopago.com/v1/payments/${payId}`, { headers: { Authorization: `Bearer ${MP_TOKEN}` } });
+    const p = await r.json();
+    if (!r.ok || p.status !== 'approved') return;
+    db.payments = db.payments || [];
+    if (db.payments.some(x => x.id === String(p.id))) return; // já processado
+    const [userId, planId] = String(p.external_reference || '').split(':');
+    const user = db.users.find(u => u.id === userId), plan = PLANS[planId];
+    if (!user || !plan || Number(p.transaction_amount) + 0.001 < plan.price) return;
+    const start = (user.plan === planId && user.planUntil > Date.now()) ? user.planUntil : Date.now();
+    user.plan = planId; user.planUntil = start + 30 * 24 * 3600 * 1000;
+    db.payments.push({ id: String(p.id), userId, planId, amount: p.transaction_amount, at: Date.now() });
+    saveDb();
+    console.log('[pagamentos] plano liberado', planId, 'para', userId);
+  } catch (e) { console.error('[pagamentos] erro no aviso', e.message); }
 });
 
 app.get('/api/me', auth, (req, res) => {
