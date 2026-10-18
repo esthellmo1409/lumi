@@ -66,6 +66,11 @@ input{font:inherit}
 .plan .price small{display:block;color:var(--soft);font-weight:500;font-size:12px}
 .plan .tag{display:inline-block;background:var(--accent);color:#24140a;font-size:11px;font-weight:700;padding:2px 7px;border-radius:99px;margin-bottom:4px}
 .current{background:var(--card);border-radius:12px;padding:12px 14px;font-size:14px;margin-bottom:12px;color:var(--ink)}
+.hello{margin:0 0 16px}
+.hello h2{font-size:26px;line-height:1.15;margin:0 0 6px;font-weight:800;text-wrap:balance}
+.hello h2 span{color:var(--accent)}
+.safe{display:inline-flex;align-items:center;gap:7px;color:var(--soft);font-size:14px}
+.safe svg{width:17px;height:17px;flex:none;color:var(--accent2)}
 .err{color:var(--danger);font-size:14px;min-height:20px;margin:4px 0 10px}
 
 /* ---------- Painel ---------- */
@@ -184,6 +189,11 @@ input{font:inherit}
       <span class="brand">Lumi</span>
     </div>
     <button class="avatar" id="avatarBtn">?</button>
+  </div>
+
+  <div class="hello">
+    <h2>Seja bem-vindo(a), <span id="helloName"></span></h2>
+    <div class="safe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 9.5 4-1.2 7-5 7-9.5V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></svg>Aqui você tem segurança e privacidade.</div>
   </div>
 
   <div class="meter">
@@ -376,6 +386,7 @@ async function boot() {
   try { me = await api('/api/me'); } catch { $('#authView').classList.remove('hidden'); $('#appView').classList.add('hidden'); return; }
   $('#authView').classList.add('hidden'); $('#appView').classList.remove('hidden');
   $('#avatarBtn').textContent = me.name[0].toUpperCase();
+  $('#helloName').textContent = me.name.trim().split(/\s+/)[0];
   $('#mName').textContent = me.name; $('#mEmail').textContent = me.email;
   files = await api('/api/files');
   render();
