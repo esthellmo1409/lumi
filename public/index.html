@@ -45,6 +45,14 @@ input{font:inherit}
 .btn:active{transform:scale(.98)}
 .switch{margin-top:18px;text-align:center;color:var(--soft);font-size:15px}
 .switch button{color:var(--accent2);font-weight:600}
+.pw{position:relative;display:block}
+.pw input{padding-right:52px}
+.eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:42px;height:42px;display:grid;place-items:center;color:var(--soft);border-radius:10px}
+.eye:focus-visible{outline:2px solid var(--accent2)}
+.eye svg{width:22px;height:22px}
+.addbtn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:15px;border-radius:14px;background:var(--accent);color:#24140a;font-weight:700;font-size:16px;margin-bottom:14px}
+.addbtn svg{width:20px;height:20px}
+.empty .addbtn{width:auto;display:inline-flex;margin:20px 0 0;padding:14px 22px}
 .err{color:var(--danger);font-size:14px;min-height:20px;margin:4px 0 10px}
 
 /* ---------- Painel ---------- */
@@ -126,7 +134,7 @@ input{font:inherit}
   <form id="authForm" autocomplete="on">
     <label class="field" id="nameField"><input name="name" placeholder="Seu nome" autocomplete="name"></label>
     <label class="field"><input name="email" type="email" placeholder="E-mail" autocomplete="email" required></label>
-    <label class="field"><input name="password" type="password" placeholder="Senha (8+ caracteres, letras e números)" autocomplete="current-password" required></label>
+    <label class="field pw"><input name="password" type="password" placeholder="Senha (8+ caracteres, letras e números)" autocomplete="current-password" required></label>
     <div class="err" id="authErr"></div>
     <button class="btn" id="authBtn">Criar minha conta grátis</button>
   </form>
@@ -149,6 +157,7 @@ input{font:inherit}
     <div class="tip" id="meterTip">Envie seus arquivos e depois apague do iPhone com tranquilidade.</div>
   </div>
 
+  <button class="addbtn" id="addTop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0-4.5 4.5M12 4l4.5 4.5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>Adicionar arquivos</button>
   <input class="search" id="search" type="search" placeholder="Buscar pelo nome do arquivo">
   <div class="tools" id="filters">
     <button class="chip on" data-k="all">Tudo</button>
@@ -164,12 +173,13 @@ input{font:inherit}
   <div class="empty hidden" id="empty">
     <svg width="90" height="90" viewBox="0 0 48 48"><path d="M14 36a9 9 0 0 1-1.2-17.9A12 12 0 0 1 36 16.5 8 8 0 0 1 35 36Z" fill="none" stroke="#2a3670" stroke-width="2"/></svg>
     <h2 id="emptyTitle">Sua nuvem está vazia</h2>
-    <div id="emptyText">Toque em <b>Enviar arquivos</b> e escolha fotos e vídeos da sua galeria.</div>
+    <div id="emptyText">Toque em <b>Adicionar arquivos</b> e escolha fotos e vídeos da sua galeria.</div>
+    <button class="addbtn" id="addEmpty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Adicionar arquivos</button>
   </div>
 
   <button class="fab" id="fab">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-    Enviar arquivos
+    Adicionar
   </button>
   <div class="selbar hidden" id="selbar">
     <span id="selCount">0 selecionados</span>
@@ -211,8 +221,8 @@ input{font:inherit}
   <form class="sheet" id="passForm">
     <h3>Trocar senha</h3>
     <p>Os outros aparelhos conectados vão precisar entrar de novo.</p>
-    <label class="field"><input id="pCur" type="password" placeholder="Senha atual" autocomplete="current-password" required></label>
-    <label class="field"><input id="pNew" type="password" placeholder="Nova senha (8+ caracteres, letras e números)" autocomplete="new-password" required></label>
+    <label class="field pw"><input id="pCur" type="password" placeholder="Senha atual" autocomplete="current-password" required></label>
+    <label class="field pw"><input id="pNew" type="password" placeholder="Nova senha (8+ caracteres, letras e números)" autocomplete="new-password" required></label>
     <div class="err" id="passErr"></div>
     <button class="btn" id="passBtn">Salvar nova senha</button>
   </form>
@@ -281,8 +291,9 @@ function render() {
   const list = visible();
   const g = $('#grid'); g.innerHTML = '';
   $('#empty').classList.toggle('hidden', list.length > 0);
+  $('#addEmpty').classList.toggle('hidden', files.length > 0);
   if (!list.length && files.length) { $('#emptyTitle').textContent = 'Nada por aqui'; $('#emptyText').textContent = 'Nenhum arquivo combina com esse filtro.'; }
-  else { $('#emptyTitle').textContent = 'Sua nuvem está vazia'; $('#emptyText').innerHTML = 'Toque em <b>Enviar arquivos</b> e escolha fotos e vídeos da sua galeria.'; }
+  else { $('#emptyTitle').textContent = 'Sua nuvem está vazia'; $('#emptyText').innerHTML = 'Toque em <b>Adicionar arquivos</b> e escolha fotos e vídeos da sua galeria.'; }
   for (const f of list) {
     const t = document.createElement('div');
     t.className = 'tile' + (selected.has(f.id) ? ' sel' : '');
@@ -331,6 +342,8 @@ $('#selDel').onclick = async () => {
 
 // ---------- Envio ----------
 $('#fab').onclick = () => $('#picker').click();
+$('#addTop').onclick = () => $('#picker').click();
+$('#addEmpty').onclick = () => $('#picker').click();
 $('#picker').onchange = e => { if (e.target.files.length) uploadFiles([...e.target.files]); e.target.value = ''; };
 function toast(txt, progress) {
   $('#toast').classList.remove('hidden'); $('#toastTxt').textContent = txt;
@@ -416,6 +429,23 @@ $('#mAll').onclick = async () => {
 };
 $('#mLogout').onclick = async () => { await api('/api/logout', { method: 'POST' }); location.reload(); };
 $('#mInstall').onclick = () => alert('No Safari, toque no botão Compartilhar (quadrado com seta) e depois em "Adicionar à Tela de Início". A Lumi vai abrir como um app.');
+
+// Olhinho para mostrar/esconder a senha
+const EYE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6C3.7 8.4 2 12 2 12s3.5 7 10 7c1.8 0 3.4-.5 4.8-1.3M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></svg>';
+document.querySelectorAll('.pw').forEach(wrap => {
+  const input = wrap.querySelector('input');
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'eye'; b.innerHTML = EYE; b.setAttribute('aria-label', 'Mostrar senha');
+  b.onclick = () => {
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    b.innerHTML = show ? EYE_OFF : EYE;
+    b.setAttribute('aria-label', show ? 'Esconder senha' : 'Mostrar senha');
+  };
+  wrap.appendChild(b);
+});
+$('#passForm').addEventListener('reset', () => document.querySelectorAll('#passForm .pw input').forEach(i => i.type = 'password'));
 
 boot();
 </script>
