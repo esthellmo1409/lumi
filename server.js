@@ -803,6 +803,20 @@ app.post('/api/admin/settings', admin, (req, res) => {
   saveDb(); res.json({ ok: true, railway: railwayDue() });
 });
 
+// Contas marcadas pelo servidor para pagar antes de entrar (REQUIRE_PAYMENT_EMAILS="a@x.com,b@y.com")
+function applyRequiredPayments() {
+  const list = String(process.env.REQUIRE_PAYMENT_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+  let changed = 0;
+  for (const u of db.users) {
+    if (list.includes(u.email) && !u.requirePayment && !isAdmin(u)) {
+      u.requirePayment = true; u.tv = (u.tv || 0) + 1; u.devices = []; changed++;
+      console.log('[admin] cobrança para entrar aplicada em', u.email);
+    }
+  }
+  if (changed) saveDb();
+}
+setTimeout(applyRequiredPayments, 5000);
+
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
