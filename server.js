@@ -46,6 +46,8 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(express.json());
 app.use(cookieParser());
+let BUCKET_HOSTS = '';
+try { const h = new URL(process.env.BUCKET_ENDPOINT).host; BUCKET_HOSTS = `https://${h} https://*.${h}`; } catch {}
 // Cabeçalhos de segurança
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -56,7 +58,8 @@ app.use((req, res, next) => {
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'", "script-src 'self' 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", "font-src https://fonts.gstatic.com",
-    "img-src 'self' blob: data:", "media-src 'self' blob:", "frame-src 'self'",
+    `img-src 'self' blob: data: ${BUCKET_HOSTS}`, `media-src 'self' blob: ${BUCKET_HOSTS}`, `frame-src 'self' ${BUCKET_HOSTS}`,
+    `connect-src 'self' ${BUCKET_HOSTS}`,
     "frame-ancestors 'self'", "base-uri 'none'", "form-action 'self'", "object-src 'none'",
   ].join('; '));
   next();
@@ -189,7 +192,7 @@ async function finishLogin(req, res, user, purpose) {
   }
 }
 
-app.get('/api/config', (req, res) => res.json({ email: EMAIL_ON }));
+app.get('/api/config', (req, res) => res.json({ email: EMAIL_ON, direct: !!process.env.BUCKET_NAME }));
 
 app.post('/api/register', async (req, res) => {
   if (tooMany('reg:' + req.ip)) return res.status(429).json({ error: 'Muitas contas criadas daqui. Tente mais tarde.' });
@@ -332,6 +335,121 @@ app.post('/api/upload', auth, upload.array('files', 50), (req, res) => {
   res.json(saved);
 });
 
+// ---------- Armazenamento no Bucket (S3) ----------
+const S3_ON = !!(process.env.BUCKET_ENDPOINT && process.env.BUCKET_NAME && process.env.BUCKET_ACCESS_KEY_ID && process.env.BUCKET_SECRET_ACCESS_KEY);
+const BUCKET = process.env.BUCKET_NAME;
+let s3 = null;
+const S3 = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { createPresignedPost } = require('@aws-sdk/s3-presigned-post');
+if (S3_ON) {
+  s3 = new S3.S3Client({
+    region: process.env.BUCKET_REGION || 'auto',
+    endpoint: process.env.BUCKET_ENDPOINT,
+    credentials: { accessKeyId: process.env.BUCKET_ACCESS_KEY_ID, secretAccessKey: process.env.BUCKET_SECRET_ACCESS_KEY },
+    requestChecksumCalculation: 'WHEN_REQUIRED', responseChecksumValidation: 'WHEN_REQUIRED',
+  });
+}
+console.log(S3_ON ? `[arquivos] Usando o bucket ${BUCKET}` : '[arquivos] Usando o volume local (bucket não configurado)');
+
+const appOrigins = () => [
+  process.env.RAILWAY_PUBLIC_DOMAIN && `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`,
+  ...String(process.env.APP_ORIGINS || '').split(',').map(s => s.trim()),
+].filter(Boolean);
+
+async function setupBucket() {
+  if (!S3_ON) return;
+  try {
+    await s3.send(new S3.PutBucketCorsCommand({
+      Bucket: BUCKET,
+      CORSConfiguration: { CORSRules: [{
+        AllowedOrigins: appOrigins(), AllowedMethods: ['GET', 'HEAD', 'PUT', 'POST'],
+        AllowedHeaders: ['*'], ExposeHeaders: ['ETag'], MaxAgeSeconds: 3000,
+      }] },
+    }));
+    console.log('[arquivos] CORS do bucket configurado para', appOrigins().join(', '));
+  } catch (e) { console.error('[arquivos] não consegui configurar o CORS do bucket:', e.name, e.message); }
+  // move para o bucket os arquivos que ainda estão no volume
+  const local = db.files.filter(f => f.storage !== 's3');
+  for (const f of local) {
+    const p = path.join(FILES_DIR, f.id);
+    if (!fs.existsSync(p)) continue;
+    try {
+      const key = `u/${f.userId}/${f.id}`;
+      await s3.send(new S3.PutObjectCommand({ Bucket: BUCKET, Key: key, Body: fs.createReadStream(p), ContentLength: f.size, ContentType: f.mime }));
+      f.storage = 's3'; f.key = key; saveDb();
+      fs.unlink(p, () => {});
+      console.log('[arquivos] movido para o bucket:', f.id);
+    } catch (e) { console.error('[arquivos] falha ao mover', f.id, e.message); }
+  }
+}
+
+const isRisky = f => /html|svg|xml|javascript|ecmascript/i.test(f.mime) || /\.(html?|svg|xml|js|mjs|xhtml)$/i.test(f.name);
+async function signedGet(f, disposition) {
+  return getSignedUrl(s3, new S3.GetObjectCommand({
+    Bucket: BUCKET, Key: f.key,
+    ResponseContentType: isRisky(f) ? 'text/plain; charset=utf-8' : f.mime,
+    ResponseContentDisposition: `${disposition}; filename*=UTF-8''${encodeURIComponent(f.name)}`,
+  }), { expiresIn: 3600 });
+}
+
+// Envio direto do iPhone para o bucket
+const pending = new Map(); // id -> { userId, key, name, size, mime, exp }
+setInterval(() => { const now = Date.now(); for (const [k, p] of pending) if (p.exp < now) pending.delete(k); }, 10 * 60 * 1000);
+
+app.post('/api/upload/start', auth, async (req, res) => {
+  if (!S3_ON) return res.status(400).json({ error: 'Envio direto indisponível.' });
+  const list = Array.isArray(req.body.files) ? req.body.files.slice(0, 50) : [];
+  if (!list.length) return res.status(400).json({ error: 'Nenhum arquivo escolhido.' });
+  const total = list.reduce((s, f) => s + Math.max(0, Number(f.size) || 0), 0);
+  if (list.some(f => Number(f.size) > MAX_FILE_BYTES)) return res.status(413).json({ error: `Cada arquivo pode ter no máximo ${Math.round(MAX_FILE_BYTES / 1024 ** 3)} GB.` });
+  if (usedBytes(req.user.id) + total > QUOTA_BYTES) return res.status(413).json({ error: 'Seu espaço acabou. Apague alguns arquivos para enviar mais.' });
+  try {
+    const out = [];
+    for (const f of list) {
+      const fid = id(), key = `u/${req.user.id}/${fid}`;
+      const size = Math.max(0, Number(f.size) || 0);
+      const mime = String(f.type || 'application/octet-stream').slice(0, 100);
+      const { url, fields } = await createPresignedPost(s3, {
+        Bucket: BUCKET, Key: key, Expires: 3 * 3600,
+        Fields: { 'Content-Type': mime },
+        Conditions: [['eq', '$key', key], ['eq', '$Content-Type', mime], ['content-length-range', 0, size]],
+      });
+      pending.set(fid, { userId: req.user.id, key, name: String(f.name || 'arquivo').slice(0, 200), size, mime, exp: Date.now() + 3 * 3600 * 1000 });
+      out.push({ id: fid, url, fields });
+    }
+    res.json(out);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Não consegui preparar o envio. Tente de novo.' }); }
+});
+
+app.post('/api/upload/finish', auth, async (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.slice(0, 50) : [];
+  const saved = [];
+  for (const fid of ids) {
+    const p = pending.get(String(fid));
+    if (!p || p.userId !== req.user.id) continue;
+    try {
+      const head = await s3.send(new S3.HeadObjectCommand({ Bucket: BUCKET, Key: p.key }));
+      const size = Number(head.ContentLength) || 0;
+      if (usedBytes(req.user.id) + size > QUOTA_BYTES) {
+        await s3.send(new S3.DeleteObjectCommand({ Bucket: BUCKET, Key: p.key })).catch(() => {});
+        continue;
+      }
+      const rec = { id: fid, userId: req.user.id, name: p.name, size, mime: p.mime, kind: kindOf(p.mime, p.name), fav: false, storage: 's3', key: p.key, createdAt: Date.now() };
+      db.files.push(rec); saved.push(publicFile(rec));
+      pending.delete(fid);
+    } catch (e) { console.error('[arquivos] envio não encontrado no bucket', fid, e.name); }
+  }
+  saveDb();
+  res.json(saved);
+});
+
+app.get('/api/files/:id/link', auth, async (req, res) => {
+  const f = ownFile(req, res); if (!f) return;
+  if (f.storage !== 's3') return res.json({ url: `/api/files/${f.id}/view` });
+  res.json({ url: await signedGet(f, 'inline') });
+});
+
 function ownFile(req, res) {
   const f = db.files.find(x => x.id === req.params.id && x.userId === req.user.id);
   if (!f) res.status(404).json({ error: 'Arquivo não encontrado.' });
@@ -339,18 +457,23 @@ function ownFile(req, res) {
 }
 
 // Visualizar (suporta vídeo com avanço/retrocesso via Range)
-app.get('/api/files/:id/view', auth, (req, res) => {
+app.get('/api/files/:id/view', auth, async (req, res) => {
   const f = ownFile(req, res); if (!f) return;
+  if (f.storage === 's3') {
+    res.setHeader('Cache-Control', 'private, max-age=1800');
+    return res.redirect(302, await signedGet(f, 'inline'));
+  }
   // arquivos que poderiam rodar código no navegador são mostrados só como texto
-  const risky = /html|svg|xml|javascript|ecmascript/i.test(f.mime) || /\.(html?|svg|xml|js|mjs|xhtml)$/i.test(f.name);
+  const risky = isRisky(f);
   res.type(risky ? 'text/plain' : f.mime);
   res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(f.name)}`);
   res.sendFile(path.join(FILES_DIR, f.id));
 });
 
-app.get('/api/files/:id/download', auth, (req, res) => {
+app.get('/api/files/:id/download', auth, async (req, res) => {
   const f = ownFile(req, res); if (!f) return;
+  if (f.storage === 's3') { res.setHeader('Cache-Control', 'private, no-store'); return res.redirect(302, await signedGet(f, 'attachment')); }
   res.setHeader('Cache-Control', 'private, no-store');
   res.download(path.join(FILES_DIR, f.id), f.name);
 });
@@ -366,7 +489,8 @@ app.patch('/api/files/:id', auth, (req, res) => {
 app.delete('/api/files/:id', auth, (req, res) => {
   const f = ownFile(req, res); if (!f) return;
   db.files = db.files.filter(x => x !== f);
-  fs.unlink(path.join(FILES_DIR, f.id), () => {});
+  if (f.storage === 's3') s3.send(new S3.DeleteObjectCommand({ Bucket: BUCKET, Key: f.key })).catch(e => console.error('[arquivos] falha ao apagar', f.id, e.message));
+  else fs.unlink(path.join(FILES_DIR, f.id), () => {});
   saveDb();
   res.json({ ok: true });
 });
@@ -379,4 +503,4 @@ app.use((err, req, res, next) => {
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-app.listen(PORT, () => console.log(`Lumi rodando na porta ${PORT} | dados em ${DATA_DIR}`));
+app.listen(PORT, () => { console.log(`Lumi rodando na porta ${PORT} | dados em ${DATA_DIR}`); setupBucket(); });

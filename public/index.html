@@ -283,7 +283,8 @@ function setMode(m) {
   $('#authErr').textContent = '';
 }
 $('#authSwitch button').onclick = () => setMode('login');
-fetch('/api/config').then(r => r.json()).then(c => { emailOn = c.email; setMode(mode); }).catch(() => {});
+let directUpload = false;
+fetch('/api/config').then(r => r.json()).then(c => { emailOn = c.email; directUpload = c.direct; setMode(mode); }).catch(() => {});
 function screen(show, title, lead) {
   screens.forEach(sel => $(sel).classList.toggle('hidden', !show.includes(sel)));
   if (title) $('#authTitle').innerHTML = title;
@@ -435,7 +436,49 @@ function toast(txt, progress) {
   if (progress != null) $('#toastBar').style.width = progress + '%';
 }
 const hideToast = (ms = 2500) => setTimeout(() => $('#toast').classList.add('hidden'), ms);
+// Envio direto do iPhone para o armazenamento, um arquivo de cada vez
+async function uploadDirect(list) {
+  const total = list.reduce((s, f) => s + f.size, 0) || 1;
+  let done = 0, count = 0;
+  toast('Preparando envio…', 0);
+  try {
+    for (let i = 0; i < list.length; i += 20) {
+      const batch = list.slice(i, i + 20);
+      const slots = await api('/api/upload/start', { method: 'POST', body: JSON.stringify({
+        files: batch.map(f => ({ name: f.name, size: f.size, type: f.type || 'application/octet-stream' })) }) });
+      const okIds = [];
+      try {
+        for (let j = 0; j < batch.length; j++) {
+          const f = batch[j], slot = slots[j];
+          await new Promise((resolve, reject) => {
+            const fd = new FormData();
+            Object.entries(slot.fields).forEach(([k, v]) => fd.append(k, v));
+            fd.append('file', f);
+            const x = new XMLHttpRequest();
+            x.open('POST', slot.url);
+            x.upload.onprogress = ev => toast(`Enviando ${i + j + 1} de ${list.length}… não feche esta tela`, Math.round((done + ev.loaded) / total * 100));
+            x.onload = () => x.status < 300 ? resolve() : reject(new Error(`Não consegui enviar ${f.name}. Tente de novo.`));
+            x.onerror = () => reject(new Error('A conexão caiu. Tente enviar de novo.'));
+            x.send(fd);
+          });
+          done += f.size; okIds.push(slot.id);
+        }
+      } finally {
+        if (okIds.length) {
+          const recs = await api('/api/upload/finish', { method: 'POST', body: JSON.stringify({ ids: okIds }) });
+          files = [...recs, ...files]; count += recs.length; render();
+        }
+      }
+    }
+    toast(`Pronto! ${count} arquivo(s) guardado(s) no Lumi.`); hideToast();
+  } catch (err) {
+    toast(count ? `${count} arquivo(s) guardado(s). ${err.message}` : err.message); hideToast(5000);
+  }
+  refreshMe();
+}
+
 function uploadFiles(list) {
+  if (directUpload) return uploadDirect(list);
   // envia em lotes para não travar com vídeos grandes
   const batches = []; let cur = [], size = 0;
   for (const f of list) { if (cur.length && (size + f.size > 200 * 1024 ** 2 || cur.length >= 20)) { batches.push(cur); cur = []; size = 0; } cur.push(f); size += f.size; }
@@ -486,7 +529,8 @@ $('#vDel').onclick = async () => {
 $('#vShare').onclick = async () => {
   try {
     toast('Preparando arquivo…');
-    const blob = await (await fetch(`/api/files/${current.id}/view`)).blob();
+    const { url } = await api(`/api/files/${current.id}/link`);
+    const blob = await (await fetch(url)).blob();
     const file = new File([blob], current.name, { type: current.mime });
     $('#toast').classList.add('hidden');
     if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file] });

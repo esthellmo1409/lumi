@@ -1,19 +1,22 @@
 {
   "name": "lumi",
   "version": "1.0.0",
-  "description": "Lumi - sua nuvem pessoal para liberar espaço no iPhone",
+  "description": "Lumi - sua nuvem pessoal para liberar espa\u00e7o no iPhone",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "@aws-sdk/client-s3": "^3.620.0",
+    "@aws-sdk/s3-presigned-post": "^3.620.0",
+    "@aws-sdk/s3-request-presigner": "^3.620.0"
   }
 }
