@@ -386,7 +386,7 @@ function kindOf(mime, name) {
   if (mime.startsWith('audio/')) return 'audio';
   return 'doc';
 }
-const publicFile = f => ({ id: f.id, name: f.name, size: f.size, mime: f.mime, kind: f.kind, fav: !!f.fav, createdAt: f.createdAt });
+const publicFile = f => ({ id: f.id, name: f.name, size: f.size, mime: f.mime, kind: f.kind, fav: !!f.fav, createdAt: f.createdAt, deletedAt: f.deletedAt || null });
 
 app.get('/api/files', auth, (req, res) => {
   const list = db.files.filter(f => f.userId === req.user.id).sort((a, b) => b.createdAt - a.createdAt);
@@ -566,14 +566,40 @@ app.patch('/api/files/:id', auth, (req, res) => {
   res.json(publicFile(f));
 });
 
-app.delete('/api/files/:id', auth, (req, res) => {
-  const f = ownFile(req, res); if (!f) return;
+// ---------- Lixeira ----------
+const TRASH_DAYS = 30;
+function eraseFile(f) {
   db.files = db.files.filter(x => x !== f);
   if (f.storage === 's3') s3.send(new S3.DeleteObjectCommand({ Bucket: BUCKET, Key: f.key })).catch(e => console.error('[arquivos] falha ao apagar', f.id, e.message));
   else fs.unlink(path.join(FILES_DIR, f.id), () => {});
-  saveDb();
-  res.json({ ok: true });
+}
+
+// Apagar: primeiro vai para a lixeira; com ?forever=1 (ou se já estiver na lixeira) apaga de vez
+app.delete('/api/files/:id', auth, (req, res) => {
+  const f = ownFile(req, res); if (!f) return;
+  if (f.deletedAt || req.query.forever === '1') { eraseFile(f); saveDb(); return res.json({ ok: true, erased: true }); }
+  f.deletedAt = Date.now(); saveDb();
+  res.json(publicFile(f));
 });
+
+app.post('/api/files/:id/restore', auth, (req, res) => {
+  const f = ownFile(req, res); if (!f) return;
+  delete f.deletedAt; saveDb();
+  res.json(publicFile(f));
+});
+
+app.post('/api/trash/empty', auth, (req, res) => {
+  const trashed = db.files.filter(f => f.userId === req.user.id && f.deletedAt);
+  trashed.forEach(eraseFile); saveDb();
+  res.json({ ok: true, count: trashed.length });
+});
+
+// limpa sozinho o que está na lixeira há mais de 30 dias
+setInterval(() => {
+  const limit = Date.now() - TRASH_DAYS * 24 * 3600 * 1000;
+  const old = db.files.filter(f => f.deletedAt && f.deletedAt < limit);
+  if (old.length) { old.forEach(eraseFile); saveDb(); console.log('[lixeira] apagados de vez:', old.length); }
+}, 60 * 60 * 1000);
 
 app.use((err, req, res, next) => {
   if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'Arquivo grande demais.' });

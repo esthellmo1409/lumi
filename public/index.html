@@ -71,6 +71,11 @@ input{font:inherit}
 .hello h2 span{color:var(--accent)}
 .safe{display:inline-flex;align-items:center;gap:7px;color:var(--soft);font-size:14px}
 .safe svg{width:17px;height:17px;flex:none;color:var(--accent2)}
+.trashbar{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px;font-size:14px;color:var(--soft)}
+.trashbar span{flex:1;min-width:0}
+.trashbar button{flex:none;padding:9px 12px;border-radius:10px;background:var(--danger);color:#fff;font-weight:700;font-size:13px}
+.tile .left{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.55);font-size:11px;padding:3px 6px;border-radius:6px}
+.chip.trash.on{background:var(--danger);border-color:var(--danger);color:#fff}
 .err{color:var(--danger);font-size:14px;min-height:20px;margin:4px 0 10px}
 
 /* ---------- Painel ---------- */
@@ -212,9 +217,14 @@ input{font:inherit}
     <button class="chip" data-k="doc">Documentos</button>
     <button class="chip" data-k="audio">Áudios</button>
     <button class="chip" data-k="fav">Favoritos</button>
+    <button class="chip trash" data-k="trash">Lixeira</button>
     <button class="chip" id="selMode">Selecionar</button>
   </div>
 
+  <div class="trashbar hidden" id="trashbar">
+    <span id="trashTxt">Os itens da lixeira são apagados de vez depois de 30 dias.</span>
+    <button id="emptyTrash">Esvaziar lixeira</button>
+  </div>
   <div class="grid" id="grid"></div>
   <div class="empty hidden" id="empty">
     <svg width="90" height="90" viewBox="0 0 48 48"><path d="M14 36a9 9 0 0 1-1.2-17.9A12 12 0 0 1 36 16.5 8 8 0 0 1 35 36Z" fill="none" stroke="#2a3670" stroke-width="2"/></svg>
@@ -248,7 +258,8 @@ input{font:inherit}
     <a id="vDown" href="#"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Salvar</a>
     <button id="vShare"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 15V4m0 0L8 8m4-4 4 4M6 12v7h12v-7"/></svg>Compartilhar</button>
     <button id="vFav"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linejoin="round"><path d="m12 4 2.5 5 5.5.8-4 3.9.9 5.5L12 16.6 7.1 19.2l.9-5.5-4-3.9 5.5-.8Z"/></svg><span id="vFavTxt">Favoritar</span></button>
-    <button id="vDel"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M5 7h14M10 7V5h4v2m-7 0 1 13h8l1-13"/></svg>Apagar</button>
+    <button id="vRestore" class="hidden"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8m0-5v5h5"/></svg>Restaurar</button>
+    <button id="vDel"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M5 7h14M10 7V5h4v2m-7 0 1 13h8l1-13"/></svg><span id="vDelTxt">Apagar</span></button>
   </footer>
 </div>
 
@@ -397,12 +408,18 @@ function renderMeter() {
   $('#quotaTxt').textContent = 'de ' + fmt(me.quota);
   const p = Math.min(100, me.used / me.quota * 100);
   $('#usedBar').style.width = p + '%';
-  $('#meterTip').textContent = files.length
-    ? `${files.length} arquivo${files.length > 1 ? 's' : ''} guardado${files.length > 1 ? 's' : ''} com segurança. Já pode apagar do iPhone o que está aqui.`
+  const live = files.filter(f => !f.deletedAt).length;
+  $('#meterTip').textContent = live
+    ? `${live} arquivo${live > 1 ? 's' : ''} guardado${live > 1 ? 's' : ''} com segurança. Já pode apagar do iPhone o que está aqui.`
     : 'Envie seus arquivos e depois apague do iPhone com tranquilidade.';
 }
 function visible() {
-  return files.filter(f => (filter === 'all' || (filter === 'fav' ? f.fav : f.kind === filter)) && f.name.toLowerCase().includes(query));
+  return files.filter(f => {
+    if (!f.name.toLowerCase().includes(query)) return false;
+    if (filter === 'trash') return !!f.deletedAt;
+    if (f.deletedAt) return false;
+    return filter === 'all' || (filter === 'fav' ? f.fav : f.kind === filter);
+  });
 }
 function render() {
   renderMeter();
@@ -410,7 +427,13 @@ function render() {
   const g = $('#grid'); g.innerHTML = '';
   $('#empty').classList.toggle('hidden', list.length > 0);
   $('#addEmpty').classList.toggle('hidden', files.length > 0);
-  if (!list.length && files.length) { $('#emptyTitle').textContent = 'Nada por aqui'; $('#emptyText').textContent = 'Nenhum arquivo combina com esse filtro.'; }
+  const inTrash = files.filter(f => f.deletedAt).length;
+  $('#trashbar').classList.toggle('hidden', filter !== 'trash' || !inTrash);
+  $('#trashTxt').textContent = `${inTrash} item(ns) na lixeira. São apagados de vez depois de 30 dias.`;
+  $('#selDown').textContent = filter === 'trash' ? 'Restaurar' : 'Baixar';
+  $('#selDel').textContent = filter === 'trash' ? 'Apagar de vez' : 'Apagar';
+  if (!list.length && filter === 'trash') { $('#emptyTitle').textContent = 'A lixeira está vazia'; $('#emptyText').textContent = 'O que você apagar fica aqui por 30 dias, caso queira recuperar.'; }
+  else if (!list.length && files.length) { $('#emptyTitle').textContent = 'Nada por aqui'; $('#emptyText').textContent = 'Nenhum arquivo combina com esse filtro.'; }
   else { $('#emptyTitle').textContent = 'Sua nuvem está vazia'; $('#emptyText').innerHTML = 'Toque em <b>Adicionar arquivos</b> e escolha fotos e vídeos da sua galeria.'; }
   for (const f of list) {
     const t = document.createElement('div');
@@ -422,6 +445,7 @@ function render() {
     else if (f.kind === 'video') t.innerHTML = `<video muted playsinline preload="metadata" src="${src}#t=0.1"></video><span class="badge">▶ vídeo</span>`;
     else t.innerHTML = `<div class="ic"><div><strong>${ext || 'ARQ'}</strong>${esc(f.name).slice(0, 40)}</div></div>`;
     if (f.fav) t.insertAdjacentHTML('beforeend', '<span class="star">★</span>');
+    if (f.deletedAt) t.insertAdjacentHTML('beforeend', `<span class="left">${Math.max(0, 30 - Math.floor((Date.now() - f.deletedAt) / 864e5))} dias</span>`);
     t.onclick = () => selecting ? toggleSel(f.id) : openViewer(f);
     g.appendChild(t);
   }
@@ -448,14 +472,32 @@ function setSelecting(on) {
 function toggleSel(id) { selected.has(id) ? selected.delete(id) : selected.add(id); updSel(); render(); }
 function updSel() { $('#selCount').textContent = `${selected.size} selecionado${selected.size === 1 ? '' : 's'}`; }
 $('#selAll').onclick = () => { visible().forEach(f => selected.add(f.id)); updSel(); render(); };
-$('#selDown').onclick = () => {
+$('#selDown').onclick = async () => {
+  if (filter === 'trash') {
+    for (const id of selected) { const upd = await api(`/api/files/${id}/restore`, { method: 'POST' }); Object.assign(files.find(f => f.id === id), upd, { deletedAt: null }); }
+    toast(`${selected.size} arquivo(s) restaurado(s).`); hideToast(); setSelecting(false); return;
+  }
   [...selected].forEach((id, i) => setTimeout(() => { const a = document.createElement('a'); a.href = `/api/files/${id}/download`; a.click(); }, i * 600));
 };
 $('#selDel').onclick = async () => {
-  if (!selected.size || !confirm(`Apagar ${selected.size} arquivo(s) da Lumi? Isso não pode ser desfeito.`)) return;
-  for (const id of selected) await api(`/api/files/${id}`, { method: 'DELETE' });
-  files = files.filter(f => !selected.has(f.id));
+  if (!selected.size) return;
+  if (filter === 'trash') {
+    if (!confirm(`Apagar de vez ${selected.size} arquivo(s)? Não dá para recuperar depois.`)) return;
+    for (const id of selected) await api(`/api/files/${id}?forever=1`, { method: 'DELETE' });
+    files = files.filter(f => !selected.has(f.id));
+    toast('Apagados de vez.'); hideToast();
+  } else {
+    for (const id of selected) { const upd = await api(`/api/files/${id}`, { method: 'DELETE' }); Object.assign(files.find(f => f.id === id), upd); }
+    toast(`${selected.size} arquivo(s) movido(s) para a lixeira.`); hideToast();
+  }
   setSelecting(false); refreshMe();
+};
+$('#emptyTrash').onclick = async () => {
+  const n = files.filter(f => f.deletedAt).length;
+  if (!n || !confirm(`Esvaziar a lixeira e apagar de vez ${n} arquivo(s)? Não dá para recuperar depois.`)) return;
+  await api('/api/trash/empty', { method: 'POST' });
+  files = files.filter(f => !f.deletedAt);
+  toast('Lixeira esvaziada.'); hideToast(); refreshMe(); render();
 };
 
 // ---------- Envio ----------
@@ -547,6 +589,10 @@ function openViewer(f) {
   else st.innerHTML = `<div style="text-align:center;color:var(--soft)"><div style="font-size:42px;font-family:'Bricolage Grotesque';color:var(--accent2)">${esc((f.name.split('.').pop() || 'ARQ').toUpperCase())}</div>${fmt(f.size)}<br>Toque em Salvar para abrir no iPhone.</div>`;
   $('#vDown').href = `/api/files/${f.id}/download`;
   $('#vFavTxt').textContent = f.fav ? 'Desfavoritar' : 'Favoritar';
+  $('#vRestore').classList.toggle('hidden', !f.deletedAt);
+  $('#vFav').classList.toggle('hidden', !!f.deletedAt);
+  $('#vShare').classList.toggle('hidden', !!f.deletedAt);
+  $('#vDelTxt').textContent = f.deletedAt ? 'Apagar de vez' : 'Apagar';
   $('#viewer').classList.remove('hidden');
 }
 $('#vClose').onclick = () => { $('#viewer').classList.add('hidden'); $('#vStage').innerHTML = ''; };
@@ -555,9 +601,21 @@ $('#vFav').onclick = async () => {
   Object.assign(current, upd); $('#vFavTxt').textContent = current.fav ? 'Desfavoritar' : 'Favoritar'; render();
 };
 $('#vDel').onclick = async () => {
-  if (!confirm('Apagar este arquivo da Lumi?')) return;
-  await api(`/api/files/${current.id}`, { method: 'DELETE' });
-  files = files.filter(f => f.id !== current.id); $('#vClose').click(); refreshMe(); render();
+  if (current.deletedAt) {
+    if (!confirm('Apagar este arquivo de vez? Não dá para recuperar depois.')) return;
+    await api(`/api/files/${current.id}?forever=1`, { method: 'DELETE' });
+    files = files.filter(f => f.id !== current.id);
+    toast('Apagado de vez.');
+  } else {
+    Object.assign(current, await api(`/api/files/${current.id}`, { method: 'DELETE' }));
+    toast('Movido para a lixeira. Você pode restaurar por 30 dias.');
+  }
+  hideToast(); $('#vClose').click(); refreshMe(); render();
+};
+$('#vRestore').onclick = async () => {
+  await api(`/api/files/${current.id}/restore`, { method: 'POST' });
+  current.deletedAt = null;
+  toast('Arquivo restaurado.'); hideToast(); $('#vClose').click(); render();
 };
 $('#vShare').onclick = async () => {
   try {
