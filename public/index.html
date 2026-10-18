@@ -159,7 +159,7 @@ input{font:inherit}
 .sheet{background:var(--bg2);width:100%;max-width:520px;margin:0 auto;border-radius:22px 22px 0 0;padding:20px 20px calc(24px + env(safe-area-inset-bottom))}
 .sheet h3{margin:0 0 4px}
 .sheet p{color:var(--soft);margin:0 0 18px;font-size:14px}
-.sheet button.item{display:block;width:100%;text-align:left;padding:15px 4px;border-top:1px solid var(--line);font-size:16px}
+.sheet .item{display:block;width:100%;text-align:left;padding:15px 4px;border-top:1px solid var(--line);font-size:16px}
 </style>
 </head>
 <body>
@@ -301,6 +301,7 @@ input{font:inherit}
   <div class="sheet">
     <h3 id="mName"></h3>
     <p id="mEmail"></p>
+    <a class="item hidden" id="mAdmin" href="/admin" style="display:block;color:var(--accent);text-decoration:none;font-weight:600">Painel do administrador</a>
     <button class="item" id="mInstall">Colocar Lumi na tela de início</button>
     <button class="item" id="mPass">Trocar senha</button>
     <button class="item" id="mRec">Código de recuperação</button>
@@ -498,6 +499,7 @@ async function boot(skipRecovery) {
   $('#avatarBtn').textContent = me.name[0].toUpperCase();
   $('#helloName').textContent = me.name.trim().split(/\s+/)[0];
   $('#mName').textContent = me.name; $('#mEmail').textContent = me.email;
+  $('#mAdmin').classList.toggle('hidden', !me.admin);
   files = await api('/api/files');
   render();
   // conta sem código de recuperação: gera e mostra uma vez

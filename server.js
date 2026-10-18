@@ -101,6 +101,7 @@ function auth(req, res, next) {
     const user = db.users.find(u => u.id === uid);
     // sessão antiga (depois de trocar senha ou "sair de todos") deixa de valer
     if (!user || (tv || 0) !== (user.tv || 0)) throw new Error();
+    if (user.blocked) return res.status(403).json({ error: 'Sua conta está suspensa. Fale com o suporte do Lumi.' });
     req.user = user;
     next();
   } catch {
@@ -232,6 +233,7 @@ app.post('/api/login', async (req, res) => {
   if (!user || !(await bcrypt.compare(String(req.body.password || ''), user.hash))) {
     return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
   }
+  if (user.blocked) return res.status(403).json({ error: 'Sua conta está suspensa. Fale com o suporte do Lumi.' });
   finishLogin(req, res, user, 'login');
 });
 
@@ -353,7 +355,8 @@ console.log(MP_TOKEN ? '[pagamentos] Mercado Pago ATIVADO' : '[pagamentos] Merca
 const activePlan = user => (user.plan && PLANS[user.plan] && user.planUntil > Date.now()) ? PLANS[user.plan] : null;
 function quotaFor(user) {
   const plan = activePlan(user);
-  const base = QUOTA_BYTES + (plan ? plan.gb * 1024 ** 3 : 0);
+  const own = user.customGB > 0 ? user.customGB * 1024 ** 3 : QUOTA_BYTES; // espaço definido pelo admin substitui o padrão
+  const base = own + (plan ? plan.gb * 1024 ** 3 : 0);
   return Math.max(base, QUOTA_OVERRIDES.get(user.email) || 0);
 }
 
@@ -417,7 +420,7 @@ app.post('/api/mp/webhook', async (req, res) => {
 });
 
 app.get('/api/me', auth, (req, res) => {
-  res.json({ name: req.user.name, email: req.user.email, used: usedBytes(req.user.id), quota: quotaFor(req.user), lifetime: QUOTA_OVERRIDES.has(req.user.email), needRecovery: !req.user.recHash });
+  res.json({ name: req.user.name, email: req.user.email, used: usedBytes(req.user.id), quota: quotaFor(req.user), lifetime: QUOTA_OVERRIDES.has(req.user.email) || !!req.user.lifetime, admin: isAdmin(req.user), needRecovery: !req.user.recHash });
 });
 
 // ---------- Arquivos ----------
@@ -719,6 +722,74 @@ app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'Algo deu errado. Tente de novo.' });
 });
+
+// ---------- Painel do administrador ----------
+const ADMIN_EMAILS = String(process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+const isAdmin = u => ADMIN_EMAILS.includes(u.email);
+function admin(req, res, next) {
+  auth(req, res, () => isAdmin(req.user) ? next() : res.status(403).json({ error: 'Acesso só para o administrador.' }));
+}
+const GB = 1024 ** 3;
+function railwayDue() {
+  const day = Math.min(28, Math.max(1, Number((db.settings || {}).railwayDueDay) || 18));
+  const now = new Date();
+  let due = new Date(now.getFullYear(), now.getMonth(), day, 12);
+  if (due < now) due = new Date(now.getFullYear(), now.getMonth() + 1, day, 12);
+  return { day, date: due.getTime(), daysLeft: Math.ceil((due - now) / 864e5) };
+}
+
+app.get('/api/admin/summary', admin, (req, res) => {
+  const stored = db.files.reduce((s, f) => s + f.size, 0) + db.erased.reduce((s, f) => s + f.size, 0);
+  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+  const payments = (db.payments || []).slice().sort((a, b) => b.at - a.at);
+  const users = db.users.map(u => {
+    const plan = activePlan(u);
+    return {
+      id: u.id, name: u.name, email: u.email, createdAt: u.createdAt,
+      used: usedBytes(u.id), files: db.files.filter(f => f.userId === u.id && !f.deletedAt).length,
+      quota: quotaFor(u), customGB: u.customGB || null,
+      lifetime: !!u.lifetime || QUOTA_OVERRIDES.has(u.email), lifetimeFromEnv: QUOTA_OVERRIDES.has(u.email),
+      plan: plan ? { name: plan.name, until: u.planUntil } : null,
+      blocked: !!u.blocked, admin: isAdmin(u),
+    };
+  }).sort((a, b) => b.used - a.used);
+  res.json({
+    railway: { ...railwayDue(), estimateUSD: +(5 + Math.max(0, Math.ceil(stored / GB) - 0) * 0.015).toFixed(2) },
+    totals: {
+      users: db.users.length, files: db.files.filter(f => !f.deletedAt).length, stored,
+      revenueMonth: payments.filter(p => p.at >= monthStart.getTime()).reduce((s, p) => s + Number(p.amount || 0), 0),
+      activePlans: db.users.filter(u => activePlan(u)).length,
+    },
+    users, payments: payments.slice(0, 30).map(p => ({ ...p, email: (db.users.find(u => u.id === p.userId) || {}).email || '—', plan: (PLANS[p.planId] || {}).name || p.planId })),
+    defaultGB: Math.round(QUOTA_BYTES / GB), plans: PLANS,
+  });
+});
+
+app.post('/api/admin/user/:id', admin, (req, res) => {
+  const u = db.users.find(x => x.id === req.params.id);
+  if (!u) return res.status(404).json({ error: 'Cliente não encontrado.' });
+  const b = req.body || {};
+  if ('customGB' in b) { const g = Number(b.customGB); u.customGB = g > 0 ? Math.min(g, 1024) : undefined; }
+  if ('lifetime' in b) u.lifetime = !!b.lifetime;
+  if (b.addDays && PLANS[b.planId]) {
+    const start = (u.plan === b.planId && u.planUntil > Date.now()) ? u.planUntil : Date.now();
+    u.plan = b.planId; u.planUntil = start + Math.min(3650, Number(b.addDays)) * 864e5;
+  }
+  if (b.clearPlan) { u.plan = undefined; u.planUntil = 0; }
+  if ('blocked' in b && !isAdmin(u)) { u.blocked = !!b.blocked; if (u.blocked) u.tv = (u.tv || 0) + 1; }
+  saveDb();
+  console.log('[admin]', req.user.email, 'alterou', u.email, JSON.stringify(b));
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/settings', admin, (req, res) => {
+  db.settings = db.settings || {};
+  const d = Number(req.body.railwayDueDay);
+  if (d >= 1 && d <= 28) db.settings.railwayDueDay = d;
+  saveDb(); res.json({ ok: true, railway: railwayDue() });
+});
+
+app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
